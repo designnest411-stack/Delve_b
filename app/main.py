@@ -31,7 +31,6 @@ from app.api.routes.research import (
     flush_pending_persists,
 )
 from app.api.routes.upload import router as upload_router
-from app.api.routes.demo import router as demo_router
 
 # ── Logging Setup ─────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -127,7 +126,15 @@ async def security_headers(request, call_next):
 # ── Include Routers ───────────────────────────────────────────────────────
 app.include_router(research_router)
 app.include_router(upload_router)
-app.include_router(demo_router)
+
+@app.get("/")
+async def root():
+    return {
+        "status": "online",
+        "service": "Delve — Multi-Agent Deep Research System",
+        "version": "1.0.0",
+        "docs": "/docs",
+    }
 
 
 # ── WebSocket Endpoint ────────────────────────────────────────────────────
