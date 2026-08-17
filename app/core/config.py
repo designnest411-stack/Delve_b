@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     job_dispatch_secret: str = Field(default="")
 
     # ── Upstash (QStash + Redis) ──────────────────────────────────────────
+    qstash_url: str = Field(default="https://qstash-us-east-1.upstash.io")
     qstash_token: str = Field(default="")
     qstash_current_signing_key: str = Field(default="")
     qstash_next_signing_key: str = Field(default="")

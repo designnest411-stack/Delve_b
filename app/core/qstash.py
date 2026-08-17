@@ -27,7 +27,7 @@ async def enqueue_research_job(job_id: str) -> str:
     }
     async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.post(
-            f"https://qstash.upstash.io/v2/publish/{destination}",
+            f"{settings.qstash_url.rstrip('/')}/v2/publish/{destination}",
             headers=headers,
             json={"job_id": job_id},
         )
