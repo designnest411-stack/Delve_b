@@ -1623,7 +1623,6 @@ async def planner_node(state: ResearchState, config: dict) -> dict:
         response_mime_type="application/json",
         temperature=0.3,
         max_output_tokens=1024,
-        enable_thinking=False,
     )
 
     topic_terms = {
@@ -1988,7 +1987,6 @@ async def summarizer_node(state: ResearchState, config: dict) -> dict:
                     response_mime_type="application/json",
                     temperature=0.25,
                     max_output_tokens=1100,
-                    enable_thinking=False,
                 )
                 data = _parse_json_object(response)
                 if not data:
@@ -2178,7 +2176,6 @@ async def proposer_node(state: ResearchState, config: dict) -> dict:
         prompt=prompt,
         temperature=0.35,
         max_output_tokens=8192,
-        enable_thinking=True,
     )
 
     round_num = sum(1 for msg in debate_log if msg.startswith("[PROPOSER]")) + 1
@@ -2236,7 +2233,6 @@ async def critic_node(state: ResearchState, config: dict) -> dict:
             prompt=prompt,
             temperature=0.3,
             max_output_tokens=2048,
-            enable_thinking=True,
         )
     except Exception as e:
         logger.error("Critic node LLM call failed, skipping critique: %s", e)
@@ -2333,7 +2329,6 @@ async def cross_paper_analyzer_node(state: ResearchState, config: dict) -> dict:
             response_mime_type="application/json",
             temperature=0.2,
             max_output_tokens=2048,
-            enable_thinking=False,
         )
     except Exception as e:
         logger.error("Cross-paper analysis LLM call failed, using empty analysis: %s", e)
@@ -2501,7 +2496,6 @@ async def gap_analysis_node(state: ResearchState, config: dict) -> dict:
         response_mime_type="application/json",
         temperature=0.3,
         max_output_tokens=2048,
-        enable_thinking=False,  # Critical: disabled for JSON output
     )
 
     parsed_ok = False
@@ -2533,7 +2527,6 @@ async def gap_analysis_node(state: ResearchState, config: dict) -> dict:
                     response_mime_type="application/json",
                     temperature=0.0,
                     max_output_tokens=1024,
-                    enable_thinking=False,
                 )
                 continue
     if parsed_ok and len(candidates) < 2:
@@ -2547,7 +2540,6 @@ async def gap_analysis_node(state: ResearchState, config: dict) -> dict:
             response_mime_type="application/json",
             temperature=0.2,
             max_output_tokens=1024,
-            enable_thinking=False,
         )
         try:
             synth_data = json.loads(_extract_json_fragment(synth_resp))
@@ -2617,7 +2609,6 @@ async def gap_analysis_node(state: ResearchState, config: dict) -> dict:
         response_mime_type="application/json",
         temperature=0.2,
         max_output_tokens=2048,
-        enable_thinking=False,
     )
     gap_critique = ""
     approved: list[dict[str, Any]] = []
@@ -2941,7 +2932,6 @@ async def _generate_final_paper(
             prompt=prompt1,
             temperature=0.35,
             max_output_tokens=8192,
-            enable_thinking=True,
         )
         if p1.strip():
             # Clean any accidental trailing references heading from part 1
@@ -2965,7 +2955,6 @@ async def _generate_final_paper(
             prompt=prompt2,
             temperature=0.35,
             max_output_tokens=8192,
-            enable_thinking=True,
         )
         if p2.strip():
             # Clean any accidental trailing references heading from part 2
@@ -2989,7 +2978,6 @@ async def _generate_final_paper(
             prompt=prompt3,
             temperature=0.35,
             max_output_tokens=8192,
-            enable_thinking=True,
         )
         if p3.strip():
             sections.append(p3.strip())

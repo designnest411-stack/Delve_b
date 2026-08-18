@@ -16,7 +16,7 @@ Key features:
 import asyncio
 import logging
 import time
-from typing import Optional, List
+from typing import Optional, List, Any
 
 import httpx
 
@@ -82,6 +82,8 @@ class GeminiClient:
         response_mime_type: str = "text/plain",
         temperature: float = 0.4,
         max_output_tokens: int = 8192,
+        *args: Any,
+        **kwargs: Any,
     ) -> str:
         """Send a prompt to Gemini and return the text response."""
         return await self._generate(
@@ -99,6 +101,8 @@ class GeminiClient:
         response_mime_type: str = "text/plain",
         temperature: float = 0.4,
         max_output_tokens: int = 8192,
+        *args: Any,
+        **kwargs: Any,
     ) -> str:
         """Generate content with a system instruction."""
         return await self._generate(
@@ -116,6 +120,8 @@ class GeminiClient:
         response_mime_type: str,
         temperature: float,
         max_output_tokens: int,
+        *args: Any,
+        **kwargs: Any,
     ) -> str:
         generation_config: dict = {
             "temperature": temperature,
