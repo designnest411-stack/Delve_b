@@ -1141,6 +1141,19 @@ def _build_structured_dossier(
         ])
     return "\n".join(part for part in parts if part is not None).strip() + "\n"
 
+def _clean_authors_string(authors: str, source: str = "", url: str = "") -> str:
+    raw = (authors or "").strip()
+    if not raw or raw.lower() in {"web source", "unknown", "none", "n/a", "et al.", "author unknown"}:
+        if "arxiv" in url.lower() or "arxiv" in source.lower():
+            return "ArXiv Preprint Authors"
+        if "github" in source.lower() or "github.com" in url.lower():
+            return "Repository Contributors"
+        return "Editorial / Research Staff"
+    cleaned = re.sub(r",\s*,+", ", ", raw)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().rstrip(",")
+    return cleaned
+
+
 def _render_references_section(paper_format: str, bibliography: list[dict[str, Any]]) -> str:
     fmt = (paper_format or "ACADEMIC").upper()
     if not bibliography:
@@ -1149,27 +1162,34 @@ def _render_references_section(paper_format: str, bibliography: list[dict[str, A
     if fmt in {"IEEE", "ACM"}:
         lines = ["## References"]
         for i, b in enumerate(bibliography, start=1):
-            title = b.get("title", "Untitled")
-            authors = b.get("authors", "Unknown")
+            title = b.get("title", "Untitled").strip().rstrip(".")
+            authors = _clean_authors_string(b.get("authors", ""), b.get("source", ""), b.get("url", ""))
             year = b.get("year", "n.d.")
-            url = b.get("url", "")
-            doi = b.get("doi", "")
-            tail = f" {url}".strip()
+            url = b.get("url", "").strip()
+            doi = b.get("doi", "").strip()
+            
+            tail_parts = []
             if doi:
-                tail = f"{tail} DOI: {doi}".strip()
-            lines.append(f"[{i}] {authors}, \"{title},\" {year}.{(' ' + tail) if tail else ''}")
+                doi_clean = doi if doi.startswith("http") else f"https://doi.org/{doi}"
+                tail_parts.append(f"DOI: {doi_clean}")
+            elif url:
+                tail_parts.append(f"[Online]. Available: {url}")
+                
+            tail_str = " " + " ".join(tail_parts) if tail_parts else ""
+            lines.append(f"[{i}] {authors}, \"{title},\" {year}.{tail_str}")
         return "\n\n".join(lines)
 
     if fmt == "APA":
         lines = ["## References"]
         for b in bibliography:
-            title = b.get("title", "Untitled")
-            authors = b.get("authors", "Unknown")
+            title = b.get("title", "Untitled").strip().rstrip(".")
+            authors = _clean_authors_string(b.get("authors", ""), b.get("source", ""), b.get("url", ""))
             year = b.get("year", "n.d.")
-            url = b.get("url", "")
-            doi = b.get("doi", "")
+            url = b.get("url", "").strip()
+            doi = b.get("doi", "").strip()
             if doi:
-                lines.append(f"{authors} ({year}). {title}. https://doi.org/{doi}")
+                doi_clean = doi if doi.startswith("http") else f"https://doi.org/{doi}"
+                lines.append(f"{authors} ({year}). {title}. {doi_clean}")
             elif url:
                 lines.append(f"{authors} ({year}). {title}. {url}")
             else:
@@ -1179,10 +1199,10 @@ def _render_references_section(paper_format: str, bibliography: list[dict[str, A
     if fmt == "MLA":
         lines = ["## Works Cited"]
         for b in bibliography:
-            title = b.get("title", "Untitled")
-            authors = b.get("authors", "Unknown")
+            title = b.get("title", "Untitled").strip().rstrip(".")
+            authors = _clean_authors_string(b.get("authors", ""), b.get("source", ""), b.get("url", ""))
             year = b.get("year", "n.d.")
-            url = b.get("url", "")
+            url = b.get("url", "").strip()
             line = f"{authors}. \"{title}.\" {year}."
             if url:
                 line = f"{line} {url}"
@@ -1192,11 +1212,62 @@ def _render_references_section(paper_format: str, bibliography: list[dict[str, A
     lines = ["## References"]
     for b in bibliography:
         key = b.get("citation_key") or _citation_key(b.get("authors", ""), b.get("year", ""))
+        authors = _clean_authors_string(b.get("authors", ""), b.get("source", ""), b.get("url", ""))
         lines.append(
-            f"[@{key}] {b.get('authors', 'Unknown')}. \"{b.get('title', 'Untitled')}\". "
+            f"[@{key}] {authors}. \"{b.get('title', 'Untitled')}\". "
             f"{b.get('year', 'n.d.')}. {b.get('url', '')}".strip()
         )
     return "\n\n".join(lines)
+
+
+def _normalize_latex_math(text: str) -> str:
+    """Fix common LLM math notation glitches (stray markdown asterisks in subscripts/superscripts, missing dimension carets)."""
+    if not text:
+        return ""
+    
+    # Fix \mathbb{R}{D \times H ...} -> \mathbb{R}^{D \times H ...}
+    text = re.sub(r'\\mathbb\{([A-Za-z]+)\}\{([A-Za-z0-9\s\\times\+\-\*\^\_]+)\}', r'\\mathbb{\1}^{\2}', text)
+    
+    # Fix \mathcal{L}*_{\text{...}} or \mathcal{L}*{\text{...}} -> \mathcal{L}_{\text{...}}
+    text = re.sub(r'\\mathcal\{([A-Za-z]+)\}\*?_\{([^\}]+)\}', r'\\mathcal{\1}_{\2}', text)
+    text = re.sub(r'\\mathcal\{([A-Za-z]+)\}\*\{([^\}]+)\}', r'\\mathcal{\1}_{\2}', text)
+    text = re.sub(r'\\mathcal\{([A-Za-z]+)\}\*', r'\\mathcal{\1}', text)
+    
+    # Fix \tilde{\nabla}*\theta or \nabla*\theta -> \tilde{\nabla}_\theta
+    text = re.sub(r'\\tilde\{\\nabla\}\*([a-zA-Z\\]+)', r'\\tilde{\\nabla}_{\1}', text)
+    text = re.sub(r'\\nabla\*([a-zA-Z\\]+)', r'\\nabla_{\1}', text)
+    
+    # Clean up asterisks directly preceding subscripts or superscripts in math mode
+    def _clean_math_block(match: re.Match[str]) -> str:
+        content = match.group(0)
+        content = re.sub(r'\*+(_|\^)', r'\1', content)
+        content = re.sub(r'(_|\^)\*+', r'\1', content)
+        return content
+    
+    text = re.sub(r'(\${1,2}[^\$]+\${1,2})', _clean_math_block, text)
+    return text
+
+
+def _find_citation_index(token: str, citation_indices: dict[str, int], bibliography: list[dict[str, Any]]) -> int | None:
+    raw = re.sub(r"[^a-z0-9]", "", token.lower())
+    if raw in citation_indices:
+        return citation_indices[raw]
+    
+    words = [w.lower() for w in re.findall(r"[A-Za-z]+", token)]
+    years = re.findall(r"(?:19|20)\d{2}", token)
+    if words:
+        author = words[0]
+        year = years[0] if years else ""
+        for item in bibliography:
+            b_authors = str(item.get("authors", "")).lower()
+            b_year = str(item.get("year", "")).lower()
+            b_key = str(item.get("citation_key", "")).lower()
+            if author in b_authors or author in b_key:
+                if not year or year in b_year or year in b_key:
+                    b_clean_key = re.sub(r"[^a-z0-9]", "", b_key or _citation_key(item.get("authors", ""), item.get("year", "")))
+                    if b_clean_key in citation_indices:
+                        return citation_indices[b_clean_key]
+    return None
 
 
 def _normalize_citations_for_format(markdown: str, paper_format: str, bibliography: list[dict[str, Any]]) -> str:
@@ -1206,27 +1277,30 @@ def _normalize_citations_for_format(markdown: str, paper_format: str, bibliograp
     citation_indices = _citation_marker_map(bibliography)
 
     def _to_numeric(match: re.Match[str]) -> str:
-        key = match.group(1).strip().lower()
-        idx = citation_indices.get(key)
+        token = match.group(1).strip()
+        idx = _find_citation_index(token, citation_indices, bibliography)
         if idx is None:
+            key = re.sub(r"[^a-z0-9]", "", token.lower())
             idx = len(citation_indices) + 1
             citation_indices[key] = idx
         return f"[{idx}]"
 
     def _to_apa(match: re.Match[str]) -> str:
-        key = match.group(1).strip().lower()
+        token = match.group(1).strip()
+        key = re.sub(r"[^a-z0-9]", "", token.lower())
         for b in bibliography:
-            b_key = str(b.get("citation_key", "")).strip().lower() or _citation_key(b.get("authors", ""), b.get("year", ""))
-            if b_key == key:
+            b_key = re.sub(r"[^a-z0-9]", "", str(b.get("citation_key", "")).lower() or _citation_key(b.get("authors", ""), b.get("year", "")))
+            if b_key == key or (token.lower() in str(b.get("authors", "")).lower()):
                 author_last, year = _citation_display_name(b.get("authors", ""), b.get("year", ""))
                 return f"({author_last}, {year})"
         return "(Unknown, n.d.)"
 
     def _to_mla(match: re.Match[str]) -> str:
-        key = match.group(1).strip().lower()
+        token = match.group(1).strip()
+        key = re.sub(r"[^a-z0-9]", "", token.lower())
         for b in bibliography:
-            b_key = str(b.get("citation_key", "")).strip().lower() or _citation_key(b.get("authors", ""), b.get("year", ""))
-            if b_key == key:
+            b_key = re.sub(r"[^a-z0-9]", "", str(b.get("citation_key", "")).lower() or _citation_key(b.get("authors", ""), b.get("year", "")))
+            if b_key == key or (token.lower() in str(b.get("authors", "")).lower()):
                 author_last, _year = _citation_display_name(b.get("authors", ""), b.get("year", ""))
                 return f"({author_last})"
         return "(Unknown)"
@@ -1234,10 +1308,16 @@ def _normalize_citations_for_format(markdown: str, paper_format: str, bibliograp
     transformed = markdown
     if fmt in {"IEEE", "ACM"}:
         transformed = re.sub(r"\[@([A-Za-z0-9_.:-]+)\]", _to_numeric, transformed)
+        transformed = re.sub(r"\[([A-Z][a-zA-Z]+(?:[0-9]{4}|_[0-9]+))\]", _to_numeric, transformed)
+        transformed = re.sub(r"\[([A-Z][a-zA-Z]+(?:\s+et\s+al\.?)?,?\s*(?:19|20)\d{2}[a-z]?)\]", _to_numeric, transformed)
     elif fmt == "APA":
         transformed = re.sub(r"\[@([A-Za-z0-9_.:-]+)\]", _to_apa, transformed)
+        transformed = re.sub(r"\[([A-Z][a-zA-Z]+(?:[0-9]{4}|_[0-9]+))\]", _to_apa, transformed)
     elif fmt == "MLA":
         transformed = re.sub(r"\[@([A-Za-z0-9_.:-]+)\]", _to_mla, transformed)
+        transformed = re.sub(r"\[([A-Z][a-zA-Z]+(?:[0-9]{4}|_[0-9]+))\]", _to_mla, transformed)
+
+    transformed = _normalize_latex_math(transformed)
     return transformed
 
 
@@ -2051,7 +2131,7 @@ Structure your synthesis with clear thematic headings:
 1. **Thematic Conceptual Framework**: Synthesize foundational and emerging paradigms across the retrieved papers.
 2. **Methodological & Algorithmic Mechanics**: Compare algorithmic formulations, mathematical objectives, experimental setups, and datasets across studies.
 3. **Empirical Findings, Agreements & Contradictions**: Critically analyze quantitative benchmarks, points of consensus, statistical discrepancies, and performance trade-offs.
-4. **Evidence Caveats & Systematic Limitations**: Address threat models, assumptions, and failure modes across current literature.
+4. **Evidence Caveats & Systematic Limitations**: Address foundational assumptions, dataset biases, evaluation constraints, and failure modes across current literature.
 5. **Synthesis Summary**: Conclude with a rigorous transition setting up cross-paper analysis and research gaps.
 
 Requirements:
@@ -2713,7 +2793,7 @@ def _split_analysis_and_final_draft(markdown: str) -> tuple[str, str]:
     return "", text
 
 
-PAPER_PART1_PROMPT = """You are a distinguished academic professor and peer-reviewed author. Write PART 1 of an exhaustive, publication-grade research manuscript on: "{topic}".
+PAPER_PART1_PROMPT = """You are a distinguished academic professor and peer-reviewed author. Write PART 1 of a rigorous, publication-grade research manuscript on: "{topic}".
 Required citation and reference style: "{paper_format}".
 
 Write in rigorous, dense, high-impact academic prose. Target 2500-3500 words with deep domain expertise.
@@ -2731,14 +2811,14 @@ Required structure for Part 1 (Start directly with the paper Title):
 # <Authoritative, Specific Academic Title>
 
 **Abstract** — 250-350 words:
-Provide a structured academic abstract encompassing: (1) Background and theoretical context, (2) Core challenge and architectural problem formulation, (3) Synthesis methodology and scope across repositories, (4) Primary empirical and algorithmic findings, (5) Key limitations identified in existing literature, and (6) Strategic implications for future systems.
+Provide a structured academic abstract encompassing: (1) Background and theoretical context, (2) Core domain challenge and problem formulation, (3) Synthesis scope across research sources, (4) Primary empirical and algorithmic findings, (5) Key limitations identified in existing literature, and (6) Strategic implications for future research.
 
 **Keywords** — 5-8 precise domain keywords.
 
 ## 1. Introduction
 Write 6-8 extensive, connected paragraphs of formal academic text:
 - **1.1 Domain Motivation & Historical Trajectory**: Trace the theoretical origin, practical necessity, and evolution of the field.
-- **1.2 Threat Surface & Core Architectural Challenges**: Formalize the underlying tensions, vulnerabilities, computational boundaries, and failure modes in current approaches.
+- **1.2 Core Architectural & Domain Challenges**: Formalize the underlying domain tensions, computational boundaries, representation limitations, and failure modes in current approaches.
 - **1.3 Scope and Research Questions**: Delineate the precise boundaries of this investigation and state the central research hypotheses.
 - **1.4 Summary of Contributions**: Provide an explicit, numbered list of 4-5 substantial technical and analytical contributions made by this synthesis.
 
@@ -2750,8 +2830,8 @@ Write an extensive multi-paragraph theoretical foundation:
 
 ## 3. Thematic Literature Survey
 Provide an exhaustive thematic literature survey organized into rigorous subsections:
-- Group studies by conceptual methodology, defense paradigm, or architectural archetype.
-- Compare study objectives, assumptions, threat models, and algorithmic designs with dense in-text citations.
+- Group studies by conceptual methodology, algorithmic paradigm, or architectural archetype tailored to "{topic}".
+- Compare study objectives, modeling assumptions, representations, and algorithmic designs with dense in-text citations.
 - Avoid superficial listicles; write continuous, deeply reasoned academic synthesis.
 
 Rules:
@@ -2759,7 +2839,7 @@ Rules:
 - Maintain rigorous "{paper_format}" in-text citations ([1], [2] for IEEE; (Author, Year) for APA).
 - CRITICAL: Do NOT include a References section at the end of Part 1 (References are added at the very end of the full paper). Conclude Part 1 directly at the end of Section 3."""
 
-PAPER_PART2_PROMPT = """You are a distinguished academic professor and peer-reviewed author. Write PART 2 of an exhaustive, publication-grade research manuscript on: "{topic}".
+PAPER_PART2_PROMPT = """You are a distinguished academic professor and peer-reviewed author. Write PART 2 of a rigorous, publication-grade research manuscript on: "{topic}".
 Required citation and reference style: "{paper_format}".
 
 Write in rigorous, dense, high-impact academic prose. Target 2500-3500 words with deep empirical and algorithmic depth.
@@ -2767,32 +2847,32 @@ Strictly synthesize these verified cross-paper analyses, empirical signals, and 
 ## Cross-Paper Analysis & Methodological Patterns:
 {cross_paper_analysis}
 
-## Identified Research Gaps & Vulnerabilities:
+## Identified Research Gaps & Frontiers:
 {gaps_section}
 
 ## Available Source Citations:
 {citation_info}
 
 Required structure for Part 2 (Continue directly from Section 4):
-## 4. Algorithmic Mechanics, Methodologies & Defense Architectures
+## 4. Algorithmic Mechanics, Methodologies & System Architectures
 Write a comprehensive technical deep-dive across 4-6 detailed subsections:
-- **4.1 Algorithmic Formulations & Optimization Dynamics**: Detail mathematical formulations, objective functions, gradient dynamics, and privacy/robustness bounds.
-- **4.2 Threat Models & Attack Vectors**: Rigorous taxonomy of adversary capabilities, information leakage vectors, and perturbation mechanics.
-- **4.3 Mitigation Paradigms & Defense Frameworks**: Analyze multi-layered mitigation strategies, cryptographic bounds, differential privacy mechanisms, and robust aggregation protocols.
-- **4.4 Operational & Computational Trade-Offs**: Address convergence penalties, communication overheads, and scalability barriers.
+- **4.1 Mathematical Formulations & Optimization Dynamics**: Detail objective functions, loss formulations, representation mechanics, and convergence dynamics.
+- **4.2 Architectural Paradigms & Structural Components**: Rigorous taxonomy of core modules, feature representations, attention mechanisms, and pipeline workflows tailored directly to "{topic}".
+- **4.3 Methodological Trade-Offs & Complexity Bounds**: Analyze computational overhead, memory footprints, sample efficiency, and scalability boundaries.
+- **4.4 Operational & Deployment Considerations**: Address latency, hardware constraints, distribution shifts, and domain-specific robustness.
 
 ## 5. Comprehensive Comparative Evaluation and Empirical Synthesis
 Provide an authoritative comparative evaluation:
-- Include extensive Markdown comparison tables contrasting studies across: (1) Datasets & Benchmarks, (2) Attack Success Rate / Defense Resilience, (3) Accuracy vs Privacy Degradation, (4) Computational & Communication Overhead, and (5) Real-World Deployment Assumptions.
+- Include extensive Markdown comparison tables contrasting studies across: (1) Datasets & Benchmarks, (2) Core Evaluation Metrics (e.g. Accuracy, Dice score, F1, Loss, Latency depending on domain), (3) Model Parameters & Complexity, (4) Computational Efficiency, and (5) Real-World Deployment Assumptions.
 - Follow tables with deep analytical discussion dissecting empirical anomalies, statistical agreements, contradictions, and protocol discrepancies across the literature.
-- Critically evaluate why certain defenses fail under realistic distribution shifts or adaptive adversaries.
+- Critically evaluate why certain approaches fail under realistic distribution shifts or challenging deployment scenarios.
 
 Rules:
 - High-density academic prose with structured Markdown comparison matrices.
 - Dense in-text citations in "{paper_format}" style.
 - CRITICAL: Do NOT include a References section at the end of Part 2. Conclude Part 2 directly at the end of Section 5."""
 
-PAPER_PART3_PROMPT = """You are a distinguished academic professor and peer-reviewed author. Write PART 3 (the concluding part) of an exhaustive, publication-grade research manuscript on: "{topic}".
+PAPER_PART3_PROMPT = """You are a distinguished academic professor and peer-reviewed author. Write PART 3 (the concluding part) of a rigorous, publication-grade research manuscript on: "{topic}".
 Required citation and reference style: "{paper_format}".
 
 Write in rigorous, dense, high-impact academic prose. Target 2500-3500 words.
@@ -2816,14 +2896,14 @@ Provide an exhaustive analysis of major open challenges:
 - Synthesize an integrated 5-year technical roadmap outlining key milestone phases for the research community.
 
 ## 7. Practical Implications & Systems Engineering Takeaways
-- Actionable engineering guidelines for enterprise deployment, ML practitioners, and security architects.
-- Production trade-off matrix: choosing appropriate configurations under constrained bandwidth, heterogeneous hardware, and regulatory constraints.
+- Actionable engineering guidelines for practitioners, researchers, and systems architects in "{topic}".
+- Production trade-off matrix: choosing appropriate configurations under constrained bandwidth, compute budgets, heterogeneous hardware, and deployment environments.
 
-## 8. Limitations & Threats to Validity
-- Methodological bounds of the reviewed literature, potential publication biases, dataset homogeneity, and synthesis assumptions.
+## 8. Limitations & Methodological Scope
+- Methodological bounds of the reviewed literature, search corpus coverage, potential publication biases, dataset homogeneity, and synthesis assumptions.
 
 ## 9. Conclusion
-- Executive synthesis summarizing core breakthroughs, structural paradoxes, and the future paradigm shift of the domain.
+- Executive synthesis summarizing core breakthroughs, structural trade-offs, and future research directions for the domain.
 
 ## References
 Provide a complete, fully formatted, professional bibliography containing all cited sources in strict "{paper_format}" format with complete author names, paper titles, publication venues/journals, and DOIs/URLs.
