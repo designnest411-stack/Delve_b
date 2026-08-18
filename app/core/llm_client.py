@@ -82,7 +82,6 @@ class GeminiClient:
         response_mime_type: str = "text/plain",
         temperature: float = 0.4,
         max_output_tokens: int = 8192,
-        enable_thinking: bool = True,
     ) -> str:
         """Send a prompt to Gemini and return the text response."""
         return await self._generate(
@@ -100,7 +99,6 @@ class GeminiClient:
         response_mime_type: str = "text/plain",
         temperature: float = 0.4,
         max_output_tokens: int = 8192,
-        enable_thinking: bool = True,
     ) -> str:
         """Generate content with a system instruction."""
         return await self._generate(

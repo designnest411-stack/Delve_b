@@ -40,7 +40,7 @@ async def upload_pdf(
     Upload a PDF file.
 
     Extracts text, splits into overlapping chunks, and stores
-    in ChromaDB for later retrieval during research.
+    vector embeddings in Supabase pgvector for RAG retrieval during research.
     """
     # Validate file type
     if not file.filename or not file.filename.lower().endswith(".pdf"):

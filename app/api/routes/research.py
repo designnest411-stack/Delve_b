@@ -249,7 +249,8 @@ async def broadcast_to_session(session_id: str, message: dict[str, Any]) -> None
     for ws in connections:
         try:
             await ws.send_json(message)
-        except Exception:
+        except Exception as exc:
+            logger.debug("WebSocket send failed for session %s, removing dead connection: %s", session_id, exc)
             dead.append(ws)
     for ws in dead:
         connections.remove(ws)
@@ -563,12 +564,21 @@ async def start_research(
         raise HTTPException(status_code=400, detail="Topic cannot be empty")
 
     # Check lifetime quota (5 free papers per account)
-    has_quota = await supabase_repository.check_user_quota(user.id)
+    try:
+        has_quota = await supabase_repository.check_user_quota(user.id)
+    except Exception as exc:
+        logger.warning("Quota verification check failed for user %s, allowing by default: %s", user.id, exc)
+        has_quota = True
+
     if not has_quota:
-        quota_info = await supabase_repository.get_user_quota_info(user.id)
+        try:
+            quota_info = await supabase_repository.get_user_quota_info(user.id)
+            generated = quota_info.get("papers_generated", 5)
+        except Exception:
+            generated = 5
         raise HTTPException(
             status_code=403,
-            detail=f"Free paper limit reached. You have generated {quota_info['papers_generated']} paper(s). Upgrade for unlimited access."
+            detail=f"Free paper limit reached. You have generated {generated} paper(s). Upgrade for unlimited access."
         )
 
     await enforce_rate_limit(
@@ -700,7 +710,13 @@ async def cancel_session(
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     })
+    await supabase_repository.cancel_orphaned_jobs(session_id)
     await _persist_session(session_id)
+    await broadcast_to_session(session_id, {
+        "type": "status",
+        "message": "Research cancelled.",
+        "data": {"node": "cancelled"},
+    })
     return SessionActionResponse(session_id=session_id, status="cancelled", message="Cancellation requested")
 
 
@@ -711,15 +727,7 @@ async def retry_session(
     session = await _get_owned_session(session_id, user)
 
     # In dev or on retry, cancel any previous orphaned jobs for this session
-    try:
-        await supabase_repository._rest(
-            "PATCH", "research_jobs",
-            params={"session_id": f"eq.{session_id}", "status": "in.(queued,running)"},
-            payload={"status": "cancelled", "error": "Superseded by retry"},
-            prefer="return=minimal",
-        )
-    except Exception:
-        pass
+    await supabase_repository.cancel_orphaned_jobs(session_id)
 
     if await supabase_repository.count_active_jobs(user.id) >= settings.max_concurrent_jobs_per_user:
         raise HTTPException(status_code=429, detail="You already have a research job in progress")
@@ -765,6 +773,9 @@ async def delete_session(
     await _get_owned_session(session_id, user)
     active_sessions.pop(session_id, None)
     ws_connections.pop(session_id, None)
+    task = _pending_persist_tasks.pop(session_id, None)
+    if task and not task.done():
+        task.cancel()
     await supabase_repository.delete_session(session_id, user.id)
     return SessionActionResponse(session_id=session_id, status="deleted", message="Session deleted")
 
@@ -929,7 +940,6 @@ async def chat_with_research(
         user_prompt=user_prompt,
         temperature=0.3,
         max_output_tokens=1500,
-        enable_thinking=True,
     )
     cleaned_answer = (answer or "").strip() or "I could not generate a response for this question."
     history.append({
@@ -1031,20 +1041,30 @@ async def list_sessions(user: AuthenticatedUser = Depends(get_current_user)) -> 
             "token_estimate": data.get("metrics", {}).get("token_estimate", 0),
             "cost_estimate_usd": data.get("metrics", {}).get("cost_estimate_usd", 0),
         })
-    sessions.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
+    # DB already returns sessions ordered by updated_at DESC via PostgREST `order` param.
     return {"sessions": sessions}
 
 
 @router.get("/quota")
 async def get_quota(user: AuthenticatedUser = Depends(get_current_user)) -> dict[str, Any]:
     """Get user's paper generation quota information."""
-    quota = await supabase_repository.get_user_quota_info(user.id)
-    remaining = quota["free_papers_allowed"] - quota["papers_generated"]
-    return {
-        "papers_generated": quota["papers_generated"],
-        "papers_allowed": quota["free_papers_allowed"],
-        "papers_remaining": max(0, remaining),
-        "last_paper_at": quota["last_paper_at"],
-        "has_quota": remaining > 0,
-    }
+    try:
+        quota = await supabase_repository.get_user_quota_info(user.id)
+        remaining = quota.get("free_papers_allowed", 5) - quota.get("papers_generated", 0)
+        return {
+            "papers_generated": quota.get("papers_generated", 0),
+            "papers_allowed": quota.get("free_papers_allowed", 5),
+            "papers_remaining": max(0, remaining),
+            "last_paper_at": quota.get("last_paper_at"),
+            "has_quota": remaining > 0,
+        }
+    except Exception as exc:
+        logger.warning("Failed to get quota info for user %s: %s", user.id, exc)
+        return {
+            "papers_generated": 0,
+            "papers_allowed": 5,
+            "papers_remaining": 5,
+            "last_paper_at": None,
+            "has_quota": True,
+        }
 

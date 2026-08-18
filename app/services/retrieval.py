@@ -201,7 +201,9 @@ async def fetch_openalex(query: str, max_results: int = 10) -> list[dict]:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=30.0, headers={"User-Agent": "Delve/1.0"}) as client:
+        contact = (settings.crossref_contact_email or "").strip()
+        user_agent = f"Delve/1.0 (mailto:{contact})" if contact else "Delve/1.0"
+        async with httpx.AsyncClient(timeout=30.0, headers={"User-Agent": user_agent}) as client:
             resp = await client.get(url, params=params)
             if resp.status_code != 200:
                 logger.error("OpenAlex HTTP %s", resp.status_code)
