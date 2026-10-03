@@ -31,17 +31,17 @@ class Settings(BaseSettings):
     )
     gemini_fallback_models: list[str] = Field(
         default_factory=lambda: [
-            "gemini-3.5-flash-lite",  # 15 RPM / 250k TPM / 500 RPD (Alternative Workhorse)
-            "gemma-4-31b",            # 30 RPM / 16k TPM / 14,400 RPD (Massive Volume)
-            "gemma-4-26b",            # 30 RPM / 16k TPM / 14,400 RPD (Massive Volume)
-            "gemini-3.7-flash",       # 5 RPM / 250k TPM / 20 RPD (Heavy Reasoning)
-            "gemini-3.6-flash",       # 5 RPM / 250k TPM / 20 RPD (Heavy Reasoning)
-            "gemini-3.5-flash",       # 5 RPM / 250k TPM / 20 RPD (Heavy Reasoning)
-            "gemini-3-flash",         # 5 RPM / 250k TPM / 20 RPD (Heavy Reasoning)
-            "gemini-2.5-flash",       # 5 RPM / 250k TPM / 20 RPD
-            "gemini-2.5-flash-lite",  # 10 RPM / 250k TPM / 20 RPD
+            "gemini-3.5-flash-lite",    # 15 RPM / 250k TPM / 500 RPD (Alternative Workhorse)
+            "gemini-3.8-flash",         # 5 RPM / 250k TPM / 20 RPD (Latest Reasoning Flash)
+            "gemini-3.7-flash",         # 5 RPM / 250k TPM / 20 RPD (Deep Reasoning)
+            "gemini-3.6-flash",         # 5 RPM / 250k TPM / 20 RPD (Reasoning Flash)
+            "gemini-3.5-flash",         # 5 RPM / 250k TPM / 20 RPD (Reasoning Flash)
+            "gemini-3-flash-preview",   # 5 RPM / 250k TPM / 20 RPD (Flash Preview)
+            "gemma-4-31b-it",           # 30 RPM / 16k TPM / 14,400 RPD (Massive Daily Volume)
+            "gemma-4-26b-a4b-it",       # 30 RPM / 16k TPM / 14,400 RPD (Massive Daily Volume)
+            "gemini-flash-lite-latest", # 15 RPM / 250k TPM / 500 RPD (Safety Net Alias)
         ],
-        description="Priority cascade across all available free-tier models.",
+        description="Priority cascade across all verified active free-tier models.",
     )
     llm_model: str = Field(
         default="gemini-3.1-flash-lite",
