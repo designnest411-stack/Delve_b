@@ -23,7 +23,7 @@ import httpx
 from app.core.config import settings
 from app.core.llm_budget import record_usage, reserve_llm_call
 
-logger = logging.getLogger("delve.llm")
+logger = logging.getLogger("research_agent.llm")
 
 
 class GeminiClient:

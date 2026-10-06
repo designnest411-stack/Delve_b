@@ -1,38 +1,30 @@
-"""Small distributed fixed-window rate limiter backed by Upstash Redis REST."""
+"""In-memory rate limiter; zero external Redis dependency."""
 
 from __future__ import annotations
 
 import time
-
-import httpx
+from collections import defaultdict
 from fastapi import HTTPException
 
-from app.core.config import settings
+# Thread-safe in-memory sliding window tracker: key -> list of timestamp floats
+_rate_records: dict[str, list[float]] = defaultdict(list)
 
 
 async def enforce_rate_limit(*, key: str, limit: int, window_seconds: int, message: str) -> None:
-    """Enforce rate limits using Upstash Redis. In development mode, no-ops gracefully."""
-    if not settings.is_production:
-        return
+    """Enforce rate limits using an in-memory sliding window."""
+    now = time.time()
+    cutoff = now - window_seconds
 
-    if not settings.upstash_redis_rest_url or not settings.upstash_redis_rest_token:
-        raise HTTPException(status_code=503, detail="Rate limiting is not configured")
+    # Clean old timestamps
+    current_calls = [t for t in _rate_records[key] if t > cutoff]
 
-    bucket = int(time.time() // window_seconds)
-    redis_key = f"delve:rate:{key}:{bucket}"
-    headers = {"Authorization": f"Bearer {settings.upstash_redis_rest_token}"}
-    commands = [["INCR", redis_key], ["EXPIRE", redis_key, str(window_seconds + 5), "NX"]]
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.post(
-                f"{settings.upstash_redis_rest_url.rstrip('/')}/pipeline",
-                headers=headers,
-                json=commands,
-            )
-            response.raise_for_status()
-        count = int(response.json()[0]["result"])
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail="Rate limiter temporarily unavailable") from exc
+    if len(current_calls) >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=message,
+            headers={"Retry-After": str(window_seconds)},
+        )
 
-    if count > limit:
-        raise HTTPException(status_code=429, detail=message, headers={"Retry-After": str(window_seconds)})
+    current_calls.append(now)
+    _rate_records[key] = current_calls
+

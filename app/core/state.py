@@ -1,6 +1,6 @@
 """
-Delve Research State
-────────────────────
+ResearchAgent Research State
+────────────────────────────
 Defines the ResearchState TypedDict used by LangGraph.
 All agent nodes read from and write to this shared state.
 """

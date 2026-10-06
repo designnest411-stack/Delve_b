@@ -1,4 +1,4 @@
-"""Authentication and short-lived WebSocket tickets for hosted Delve."""
+"""Authentication and short-lived WebSocket tickets for hosted ResearchAgent."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from fastapi import HTTPException, Request, status
 
 from app.core.config import settings
 
-logger = logging.getLogger("delve.auth")
+logger = logging.getLogger("research_agent.auth")
 
 
 @dataclass(frozen=True)

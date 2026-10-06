@@ -1,6 +1,6 @@
 """
-Delve Agent Nodes
-──────────────────
+ResearchAgent Agent Nodes
+─────────────────────────
 All LangGraph node functions for the research pipeline.
 Each node reads from / writes to the shared ResearchState.
 
@@ -40,7 +40,7 @@ from app.services.retrieval import (
 )
 from app.services.supabase_vectors import query_uploaded_documents
 
-logger = logging.getLogger("delve.agents")
+logger = logging.getLogger("research_agent.agents")
 
 
 # ── Helper: WebSocket Status Update ──────────────────────────────────────
@@ -559,7 +559,7 @@ def _visual_evidence_flow_mermaid(cross: dict[str, Any], gaps: list[dict[str, An
     return "\n\n".join(lines)
 
 
-def _delve_visual_appendix(
+def _research_visual_appendix(
     topic: str,
     summaries: dict[str, dict[str, Any]],
     gaps: list[dict[str, Any]],
@@ -569,32 +569,41 @@ def _delve_visual_appendix(
     bibliography: list[dict[str, Any]],
     cross: dict[str, Any],
 ) -> dict[str, str]:
-    return {
-        "[DELVE_STUDY_LANDSCAPE]": _study_landscape_table(summaries, citation_quality, citation_verification),
-        "[DELVE_EVIDENCE_MATRIX]": _evidence_snapshot_table(summaries, citation_quality, citation_verification),
-        "[DELVE_SOURCE_MATRIX]": _source_mix_table(source_counts, bibliography),
-        "[DELVE_CITATION_AUDIT]": _citation_audit_table(bibliography),
-        "[DELVE_FINDINGS_BRIEF]": _findings_brief(cross),
-        "[DELVE_EXPERIMENT_BACKLOG]": _experiment_backlog_table(cross, gaps),
-        "[DELVE_VISUAL_LANDSCAPE]": _visual_landscape_mermaid(topic, summaries, gaps),
-        "[DELVE_VISUAL_WORKFLOW]": _visual_workflow_mermaid(gaps),
-        "[DELVE_VISUAL_EVIDENCE_FLOW]": _visual_evidence_flow_mermaid(cross, gaps),
+    mapping = {
+        "[RESEARCH_STUDY_LANDSCAPE]": _study_landscape_table(summaries, citation_quality, citation_verification),
+        "[RESEARCH_EVIDENCE_MATRIX]": _evidence_snapshot_table(summaries, citation_quality, citation_verification),
+        "[RESEARCH_SOURCE_MATRIX]": _source_mix_table(source_counts, bibliography),
+        "[RESEARCH_CITATION_AUDIT]": _citation_audit_table(bibliography),
+        "[RESEARCH_FINDINGS_BRIEF]": _findings_brief(cross),
+        "[RESEARCH_EXPERIMENT_BACKLOG]": _experiment_backlog_table(cross, gaps),
+        "[RESEARCH_VISUAL_LANDSCAPE]": _visual_landscape_mermaid(topic, summaries, gaps),
+        "[RESEARCH_VISUAL_WORKFLOW]": _visual_workflow_mermaid(gaps),
+        "[RESEARCH_VISUAL_EVIDENCE_FLOW]": _visual_evidence_flow_mermaid(cross, gaps),
     }
+    # Backward compatibility with legacy DELVE_ prefix
+    legacy = {k.replace("[RESEARCH_", "[DELVE_"): v for k, v in mapping.items()}
+    mapping.update(legacy)
+    return mapping
+
+# Alias for backwards compatibility
+_delve_visual_appendix = _research_visual_appendix
 
 
-def _replace_delve_visual_tokens(markdown: str, replacements: dict[str, str]) -> str:
+def _replace_research_visual_tokens(markdown: str, replacements: dict[str, str]) -> str:
     text = str(markdown or "")
     for token, value in replacements.items():
         if token in text:
             text = text.replace(token, value)
-    missing = [token for token in replacements if token not in markdown]
+    missing = [token for token in replacements if token.startswith("[RESEARCH_") and token not in markdown]
     if missing:
         extra = "\n\n".join(
-            f"### {token.replace('[DELVE_', '').replace(']', '').replace('_', ' ').title()}\n{replacements[token]}"
+            f"### {token.replace('[RESEARCH_', '').replace('[DELVE_', '').replace(']', '').replace('_', ' ').title()}\n{replacements[token]}"
             for token in missing
         )
         text = f"{text.rstrip()}\n\n{extra}\n"
     return text
+
+_replace_delve_visual_tokens = _replace_research_visual_tokens
 
 
 def _strip_visual_placeholder_labels(markdown: str) -> str:
@@ -988,7 +997,7 @@ def _measurement_plan_table(gaps: list[dict[str, Any]], limit: int = 6) -> str:
 def _clean_analysis_narrative(markdown: str, limit: int = 2000) -> str:
     text = _strip_mermaid_blocks(markdown or "")
     text = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", text)
-    text = re.sub(r"\[DELVE_[A-Z_]+\]", "", text)
+    text = re.sub(r"\[(DELVE|RESEARCH)_[A-Z_]+\]", "", text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
     if len(text) > limit:
         text = text[:limit].rsplit("\n", 1)[0].strip()
@@ -2748,7 +2757,7 @@ Visual requirements (STRICTLY CONFINED TO PART A):
   - `[DELVE_VISUAL_LANDSCAPE]`
   - `[DELVE_VISUAL_WORKFLOW]`
   - `[DELVE_VISUAL_EVIDENCE_FLOW]`
-- ABSOLUTELY NO `[IMAGE_PROMPT]`, Mermaid code, or Delve visual tokens are allowed in Part B.
+- ABSOLUTELY NO `[IMAGE_PROMPT]`, Mermaid code, or visual placeholder tokens are allowed in Part B.
 
 Quality requirements:
 - Do not include placeholder author text.
@@ -2784,10 +2793,10 @@ def _split_analysis_and_final_draft(markdown: str) -> tuple[str, str]:
     return "", text
 
 
-PAPER_PART1_PROMPT = """You are a distinguished academic professor and peer-reviewed author. Write PART 1 of a rigorous, publication-grade research manuscript on: "{topic}".
+PAPER_PART1_PROMPT = """You are a distinguished academic professor, journal editor-in-chief, and peer-reviewed author. Write PART 1 of a rigorous, publication-grade research manuscript on: "{topic}".
 Required citation and reference style: "{paper_format}".
 
-Write in rigorous, dense, high-impact academic prose. Target 2500-3500 words with deep domain expertise.
+Write in rigorous, dense, high-impact academic prose. Target 3000-4000 words with deep domain expertise.
 Strictly synthesize and integrate these verified research findings:
 ## Verified Literature Review:
 {literature_review}
@@ -2802,20 +2811,21 @@ Required structure for Part 1 (Start directly with the paper Title):
 # <Authoritative, Specific Academic Title>
 
 **Abstract** — 250-350 words:
-Provide a structured academic abstract encompassing: (1) Background and theoretical context, (2) Core domain challenge and problem formulation, (3) Synthesis scope across research sources, (4) Primary empirical and algorithmic findings, (5) Key limitations identified in existing literature, and (6) Strategic implications for future research.
+Provide a structured academic abstract encompassing: (1) Background and theoretical context, (2) Core domain challenge and formal problem formulation, (3) Synthesis scope across research sources, (4) Primary empirical and algorithmic findings, (5) Key limitations identified in existing literature, and (6) Strategic implications for future research.
 
-**Keywords** — 5-8 precise domain keywords.
+**Keywords** — 5-8 precise domain keywords separated by semicolons.
 
 ## 1. Introduction
 Write 6-8 extensive, connected paragraphs of formal academic text:
 - **1.1 Domain Motivation & Historical Trajectory**: Trace the theoretical origin, practical necessity, and evolution of the field.
 - **1.2 Core Architectural & Domain Challenges**: Formalize the underlying domain tensions, computational boundaries, representation limitations, and failure modes in current approaches.
 - **1.3 Scope and Research Questions**: Delineate the precise boundaries of this investigation and state the central research hypotheses.
-- **1.4 Summary of Contributions**: Provide an explicit, numbered list of 4-5 substantial technical and analytical contributions made by this synthesis.
+- **1.4 Summary of Contributions**: Provide an explicit, numbered list of 4-5 substantial technical, analytical, and methodological contributions made by this synthesis.
 
-## 2. Theoretical Foundations and Background
+## 2. Theoretical Foundations and Problem Formulation
 Write an extensive multi-paragraph theoretical foundation:
-- Define core mathematical notations, formal paradigms, and baseline conceptual mechanics.
+- Define core mathematical notations, formal paradigms, and baseline conceptual mechanics using LaTeX notation (e.g., $f(x)$, $\mathcal{L}_{total}$, $\mathbb{E}_{x \sim \mathcal{D}}$).
+- Provide a rigorous formal definition block: **Definition 1 (Problem Formulation)** delineating the mathematical or systems inputs, outputs, and constraints.
 - Categorize the foundational taxonomy of existing approaches with comprehensive citations in "{paper_format}" format.
 - Contextualize how early paradigms evolved into modern state-of-the-art formulations.
 
@@ -2830,10 +2840,10 @@ Rules:
 - Maintain rigorous "{paper_format}" in-text citations ([1], [2] for IEEE; (Author, Year) for APA).
 - CRITICAL: Do NOT include a References section at the end of Part 1 (References are added at the very end of the full paper). Conclude Part 1 directly at the end of Section 3."""
 
-PAPER_PART2_PROMPT = """You are a distinguished academic professor and peer-reviewed author. Write PART 2 of a rigorous, publication-grade research manuscript on: "{topic}".
+PAPER_PART2_PROMPT = """You are a distinguished academic professor, journal editor-in-chief, and peer-reviewed author. Write PART 2 of a rigorous, publication-grade research manuscript on: "{topic}".
 Required citation and reference style: "{paper_format}".
 
-Write in rigorous, dense, high-impact academic prose. Target 2500-3500 words with deep empirical and algorithmic depth.
+Write in rigorous, dense, high-impact academic prose. Target 3000-4000 words with deep empirical, mathematical, and algorithmic depth.
 Strictly synthesize these verified cross-paper analyses, empirical signals, and research gaps:
 ## Cross-Paper Analysis & Methodological Patterns:
 {cross_paper_analysis}
@@ -2847,14 +2857,14 @@ Strictly synthesize these verified cross-paper analyses, empirical signals, and 
 Required structure for Part 2 (Continue directly from Section 4):
 ## 4. Algorithmic Mechanics, Methodologies & System Architectures
 Write a comprehensive technical deep-dive across 4-6 detailed subsections:
-- **4.1 Mathematical Formulations & Optimization Dynamics**: Detail objective functions, loss formulations, representation mechanics, and convergence dynamics.
+- **4.1 Mathematical Formulations & Optimization Dynamics**: Detail objective functions, loss formulations (using LaTeX math blocks like $$\\mathcal{L} = \\mathcal{L}_{task} + \\lambda \\mathcal{R}$$), representation mechanics, and convergence dynamics.
 - **4.2 Architectural Paradigms & Structural Components**: Rigorous taxonomy of core modules, feature representations, attention mechanisms, and pipeline workflows tailored directly to "{topic}".
-- **4.3 Methodological Trade-Offs & Complexity Bounds**: Analyze computational overhead, memory footprints, sample efficiency, and scalability boundaries.
+- **4.3 Methodological Trade-Offs & Complexity Bounds**: Analyze computational overhead, memory footprints, asymptotic complexity ($O(N)$, $O(N^2)$), sample efficiency, and scalability boundaries.
 - **4.4 Operational & Deployment Considerations**: Address latency, hardware constraints, distribution shifts, and domain-specific robustness.
 
 ## 5. Comprehensive Comparative Evaluation and Empirical Synthesis
 Provide an authoritative comparative evaluation:
-- Include extensive Markdown comparison tables contrasting studies across: (1) Datasets & Benchmarks, (2) Core Evaluation Metrics (e.g. Accuracy, Dice score, F1, Loss, Latency depending on domain), (3) Model Parameters & Complexity, (4) Computational Efficiency, and (5) Real-World Deployment Assumptions.
+- Include extensive Markdown comparison tables contrasting studies across: (1) Model/Method Archetype, (2) Benchmark Datasets, (3) Primary Evaluation Metrics & Quantitative Performance Scores, (4) Model Parameters & Compute Footprint, (5) Computational Efficiency, and (6) Key Limitation / Failure Mode.
 - Follow tables with deep analytical discussion dissecting empirical anomalies, statistical agreements, contradictions, and protocol discrepancies across the literature.
 - Critically evaluate why certain approaches fail under realistic distribution shifts or challenging deployment scenarios.
 
@@ -2863,10 +2873,10 @@ Rules:
 - Dense in-text citations in "{paper_format}" style.
 - CRITICAL: Do NOT include a References section at the end of Part 2. Conclude Part 2 directly at the end of Section 5."""
 
-PAPER_PART3_PROMPT = """You are a distinguished academic professor and peer-reviewed author. Write PART 3 (the concluding part) of a rigorous, publication-grade research manuscript on: "{topic}".
+PAPER_PART3_PROMPT = """You are a distinguished academic professor, journal editor-in-chief, and peer-reviewed author. Write PART 3 (the concluding part) of a rigorous, publication-grade research manuscript on: "{topic}".
 Required citation and reference style: "{paper_format}".
 
-Write in rigorous, dense, high-impact academic prose. Target 2500-3500 words.
+Write in rigorous, dense, high-impact academic prose. Target 3000-4000 words.
 Strictly synthesize these verified research gaps, peer critiques, and citation inventories:
 ## Identified Research Gaps & Frontiers:
 {gaps_section}
@@ -2883,11 +2893,11 @@ Provide an exhaustive analysis of major open challenges:
 - For each identified gap (at least 4-5 gaps), dedicate a structured subsection:
   - **The Theoretical & Structural Blocker**: Why existing state-of-the-art methods fundamentally fail to resolve this issue.
   - **Empirical Blindspots & Evaluation Voids**: Missing benchmarks, unverified assumptions, and metric limitations.
-  - **Proposed Testable Research Direction & Protocol**: Specific algorithmic architectures, experimental protocols, and measurable validation metrics to overcome the gap.
-- Synthesize an integrated 5-year technical roadmap outlining key milestone phases for the research community.
+  - **Proposed Testable Research Direction & Protocol**: Specific algorithmic architectures, experimental protocols, baseline comparisons, and measurable validation metrics to overcome the gap.
+- Synthesize an integrated 5-year technical roadmap outlining key milestone phases (Phase 1: Near-Term Foundations, Phase 2: Structural Integration, Phase 3: Autonomous Frontiers) for the research community.
 
 ## 7. Practical Implications & Systems Engineering Takeaways
-- Actionable engineering guidelines for practitioners, researchers, and systems architects in "{topic}".
+- Actionable engineering guidelines for practitioners, researchers, and systems architects working in "{topic}".
 - Production trade-off matrix: choosing appropriate configurations under constrained bandwidth, compute budgets, heterogeneous hardware, and deployment environments.
 
 ## 8. Limitations & Methodological Scope
@@ -2897,7 +2907,7 @@ Provide an exhaustive analysis of major open challenges:
 - Executive synthesis summarizing core breakthroughs, structural trade-offs, and future research directions for the domain.
 
 ## References
-Provide a complete, fully formatted, professional bibliography containing all cited sources in strict "{paper_format}" format with complete author names, paper titles, publication venues/journals, and DOIs/URLs.
+Provide a complete, fully formatted, professional bibliography containing all cited sources in strict "{paper_format}" format with complete author names, paper titles, publication venues/journals, publication years, and DOIs/URLs.
 
 Rules:
 - Complete all sections in full depth with zero placeholders or truncated endings.

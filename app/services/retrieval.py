@@ -1,7 +1,7 @@
 """
-Delve Retrieval Services
-─────────────────────────
-Fetches papers from ArXiv, Semantic Scholar, and web via Tavily.
+ResearchAgent Retrieval Services
+────────────────────────────────
+Fetches papers from ArXiv, Semantic Scholar, OpenAlex, Crossref, and web via Tavily.
 All methods are async and return normalized paper dicts.
 """
 
@@ -16,7 +16,7 @@ import httpx
 
 from app.core.config import settings
 
-logger = logging.getLogger("delve.retrieval")
+logger = logging.getLogger("research_agent.retrieval")
 
 
 def _author_string_from_parts(names: list[str], limit: int = 5) -> str:
@@ -202,7 +202,7 @@ async def fetch_openalex(query: str, max_results: int = 10) -> list[dict]:
 
     try:
         contact = (settings.crossref_contact_email or "").strip()
-        user_agent = f"Delve/1.0 (mailto:{contact})" if contact else "Delve/1.0"
+        user_agent = f"ResearchAgent/1.0 (mailto:{contact})" if contact else "ResearchAgent/1.0"
         async with httpx.AsyncClient(timeout=30.0, headers={"User-Agent": user_agent}) as client:
             resp = await client.get(url, params=params)
             if resp.status_code != 200:
@@ -251,7 +251,7 @@ async def fetch_crossref(query: str, max_results: int = 10) -> list[dict]:
     }
     contact = (settings.crossref_contact_email or "").strip()
     headers = {
-        "User-Agent": f"Delve/1.0 (mailto:{contact})" if contact else "Delve/1.0",
+        "User-Agent": f"ResearchAgent/1.0 (mailto:{contact})" if contact else "ResearchAgent/1.0",
     }
 
     try:
@@ -316,7 +316,7 @@ async def fetch_github_repositories(query: str, max_results: int = 5) -> list[di
     }
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "Delve/1.0",
+        "User-Agent": "ResearchAgent/1.0",
     }
 
     try:

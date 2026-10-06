@@ -1,6 +1,6 @@
 """
-Delve Research Routes
-──────────────────────
+ResearchAgent Research Routes
+─────────────────────────────
 POST /research/start                        – Start a new research session
 POST /research/{id}/cancel                  – Request cancellation
 POST /research/{id}/retry                   – Retry a failed/cancelled session
@@ -16,13 +16,11 @@ GET  /research/{id}/export                  – Full export bundle (MD/BibTeX/JS
 GET  /research/{id}/paper.pdf               – PDF download
 POST /research/{id}/ws-ticket               – Short-lived WebSocket auth ticket
 GET  /research/sessions/list                – List all sessions
-POST /research/internal/jobs/{id}/run       – QStash job runner (internal)
 """
 
 from __future__ import annotations
 
 import asyncio
-import hmac
 import json
 import logging
 import re
@@ -41,13 +39,12 @@ from app.core.config import settings
 from app.core.auth import AuthenticatedUser, create_ws_ticket, get_current_user
 from app.core.llm_budget import activate_budget, current_budget, deactivate_budget
 from app.core.llm_client import llm_client
-from app.core.qstash import enqueue_research_job
 from app.core.rate_limit import enforce_rate_limit
 from app.core.supabase import supabase_repository
 from app.services.pdf_export import generate_research_pdf
 from app.services.supabase_vectors import query_uploaded_documents
 
-logger = logging.getLogger("delve.api.research")
+logger = logging.getLogger("research_agent.api.research")
 
 router = APIRouter(prefix="/research", tags=["research"])
 
@@ -540,7 +537,7 @@ async def _get_owned_session(session_id: str, user: AuthenticatedUser) -> dict[s
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    if not settings.is_production and session.get("status") in {"running", "queued"}:
+    if session.get("status") in {"running", "queued"}:
         session["status"] = "error"
         session["error"] = "Session was interrupted due to server restart. Please retry."
         try:
@@ -562,24 +559,6 @@ async def start_research(
 ) -> StartResearchResponse:
     if not request.topic.strip():
         raise HTTPException(status_code=400, detail="Topic cannot be empty")
-
-    # Check lifetime quota (5 free papers per account)
-    try:
-        has_quota = await supabase_repository.check_user_quota(user.id)
-    except Exception as exc:
-        logger.warning("Quota verification check failed for user %s, allowing by default: %s", user.id, exc)
-        has_quota = True
-
-    if not has_quota:
-        try:
-            quota_info = await supabase_repository.get_user_quota_info(user.id)
-            generated = quota_info.get("papers_generated", 5)
-        except Exception:
-            generated = 5
-        raise HTTPException(
-            status_code=403,
-            detail=f"Free paper limit reached. You have generated {generated} paper(s). Upgrade for unlimited access."
-        )
 
     await enforce_rate_limit(
         key=f"research-day:{user.id}", limit=settings.max_research_jobs_per_day,
@@ -629,28 +608,14 @@ async def start_research(
     await _persist_session(session_id)
 
     job = await supabase_repository.create_job(session_id, user.id)
-    if not settings.is_production:
-        # In dev mode, QStash cannot reach localhost — run the pipeline directly
-        # in a background task instead of going through QStash.
-        asyncio.create_task(_run_dev_job(str(job["id"]), session_id, user.id))
-    else:
-        try:
-            await enqueue_research_job(str(job["id"]))
-        except Exception as exc:
-            active_sessions[session_id].update({
-                "status": "error",
-                "current_step": "error",
-                "error": "Could not queue research job",
-            })
-            await _persist_session(session_id)
-            await supabase_repository.finish_job(str(job["id"]), "error", str(exc)[:300])
-            raise HTTPException(status_code=503, detail="Research queue is temporarily unavailable") from exc
+    # Run the research pipeline asynchronously in-process
+    asyncio.create_task(_run_in_process_job(str(job["id"]), session_id, user.id))
 
     return StartResearchResponse(session_id=session_id, message="Research queued")
 
 
-async def _run_dev_job(job_id: str, session_id: str, owner_id: str) -> None:
-    """Dev-only: run a research job in-process without QStash."""
+async def _run_in_process_job(job_id: str, session_id: str, owner_id: str) -> None:
+    """Run a research job in-process as an asynchronous background task."""
     job = await supabase_repository.claim_job(job_id)
     if not job:
         return
@@ -669,34 +634,6 @@ async def _run_dev_job(job_id: str, session_id: str, owner_id: str) -> None:
     final_status = active_sessions.get(session_id, {}).get("status", "error")
     await supabase_repository.finish_job(job_id, "complete" if final_status == "complete" else final_status)
 
-
-
-@router.post("/internal/jobs/{job_id}/run")
-async def run_queued_research_job(job_id: str, request: Request) -> dict[str, str]:
-    """QStash-only endpoint. Verifies the dispatch secret, claims the job, then runs the pipeline."""
-    supplied = request.headers.get("X-Delve-Job-Secret", "")
-    if not settings.job_dispatch_secret or not hmac.compare_digest(supplied, settings.job_dispatch_secret):
-        raise HTTPException(status_code=401, detail="Invalid job dispatcher credentials")
-    job = await supabase_repository.claim_job(job_id)
-    if not job:
-        return {"status": "already-claimed"}
-    session_id = str(job["session_id"])
-    owner_id = str(job["owner_id"])
-    session = await supabase_repository.get_session(session_id, owner_id)
-    if not session or session.get("status") == "cancelled":
-        await supabase_repository.finish_job(job_id, "cancelled")
-        return {"status": "cancelled"}
-    active_sessions[session_id] = session
-    ws_connections.setdefault(session_id, [])
-    await run_research_pipeline(
-        session_id=session_id,
-        topic=session.get("topic", ""),
-        uploaded_paper_ids=session.get("uploaded_paper_ids", []),
-        controls=session.get("controls", {}),
-    )
-    final_status = active_sessions.get(session_id, {}).get("status", "error")
-    await supabase_repository.finish_job(job_id, "complete" if final_status == "complete" else final_status)
-    return {"status": final_status}
 
 
 @router.post("/{session_id}/cancel", response_model=SessionActionResponse)
@@ -743,16 +680,7 @@ async def retry_session(
     })
     await _persist_session(session_id)
     job = await supabase_repository.create_job(session_id, user.id)
-    if not settings.is_production:
-        asyncio.create_task(_run_dev_job(str(job["id"]), session_id, user.id))
-    else:
-        try:
-            await enqueue_research_job(str(job["id"]))
-        except Exception as exc:
-            session.update({"status": "error", "error": "Could not queue retry"})
-            await _persist_session(session_id)
-            await supabase_repository.finish_job(str(job["id"]), "error", str(exc)[:300])
-            raise HTTPException(status_code=503, detail="Research queue temporarily unavailable") from exc
+    asyncio.create_task(_run_in_process_job(str(job["id"]), session_id, user.id))
     return SessionActionResponse(session_id=session_id, status="queued", message="Retry queued")
 
 
@@ -1047,24 +975,25 @@ async def list_sessions(user: AuthenticatedUser = Depends(get_current_user)) -> 
 
 @router.get("/quota")
 async def get_quota(user: AuthenticatedUser = Depends(get_current_user)) -> dict[str, Any]:
-    """Get user's paper generation quota information."""
+    """Get user's paper generation quota information (unlimited)."""
     try:
         quota = await supabase_repository.get_user_quota_info(user.id)
-        remaining = quota.get("free_papers_allowed", 5) - quota.get("papers_generated", 0)
         return {
             "papers_generated": quota.get("papers_generated", 0),
-            "papers_allowed": quota.get("free_papers_allowed", 5),
-            "papers_remaining": max(0, remaining),
+            "papers_allowed": -1,
+            "papers_remaining": 999999,
             "last_paper_at": quota.get("last_paper_at"),
-            "has_quota": remaining > 0,
+            "has_quota": True,
+            "unlimited": True,
         }
     except Exception as exc:
         logger.warning("Failed to get quota info for user %s: %s", user.id, exc)
         return {
             "papers_generated": 0,
-            "papers_allowed": 5,
-            "papers_remaining": 5,
+            "papers_allowed": -1,
+            "papers_remaining": 999999,
             "last_paper_at": None,
             "has_quota": True,
+            "unlimited": True,
         }
 

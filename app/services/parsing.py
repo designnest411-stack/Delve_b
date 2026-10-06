@@ -1,6 +1,6 @@
 """
-Delve PDF Parsing Service
-──────────────────────────
+ResearchAgent PDF Parsing Service
+─────────────────────────────────
 Extracts text from uploaded PDFs and splits into chunks.
 """
 
@@ -10,7 +10,7 @@ from typing import BinaryIO
 
 from pypdf import PdfReader
 
-logger = logging.getLogger("delve.parsing")
+logger = logging.getLogger("research_agent.parsing")
 
 # ── Constants ─────────────────────────────────────────────────────────────
 CHUNK_SIZE = 1000       # characters per chunk

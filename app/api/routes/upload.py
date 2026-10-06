@@ -18,7 +18,7 @@ from app.core.supabase import supabase_repository
 from app.services.parsing import inspect_pdf, chunk_text
 from app.services.vector_store import vector_store
 
-logger = logging.getLogger("delve.api.upload")
+logger = logging.getLogger("research_agent.api.upload")
 
 router = APIRouter(prefix="/upload", tags=["upload"])
 READ_CHUNK_BYTES = 1024 * 1024

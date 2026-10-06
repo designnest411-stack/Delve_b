@@ -1,6 +1,6 @@
 """
-Delve Embedding Service
-────────────────────────
+ResearchAgent Embedding Service
+────────────────────────────────
 MiniLM-L6 embedding function for generating 384-dimension vectors.
 Vectors are stored and queried via Supabase pgvector — ChromaDB is not used.
 """
@@ -8,7 +8,7 @@ Vectors are stored and queried via Supabase pgvector — ChromaDB is not used.
 import logging
 from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
 
-logger = logging.getLogger("delve.embeddings")
+logger = logging.getLogger("research_agent.embeddings")
 
 
 class EmbeddingService:

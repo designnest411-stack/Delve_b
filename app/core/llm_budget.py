@@ -20,7 +20,7 @@ class ResearchLLMBudget:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
-_budget: contextvars.ContextVar[ResearchLLMBudget | None] = contextvars.ContextVar("delve_llm_budget", default=None)
+_budget: contextvars.ContextVar[ResearchLLMBudget | None] = contextvars.ContextVar("research_llm_budget", default=None)
 _global_semaphore: asyncio.Semaphore | None = None
 
 

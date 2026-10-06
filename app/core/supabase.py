@@ -11,7 +11,7 @@ import httpx
 
 from app.core.config import settings
 
-logger = logging.getLogger("delve.supabase")
+logger = logging.getLogger("research_agent.supabase")
 
 
 class SupabaseRepository:
@@ -158,27 +158,35 @@ class SupabaseRepository:
         return len(rows) if isinstance(rows, list) else 0
 
     async def check_user_quota(self, user_id: str) -> bool:
-        """Check if user has remaining quota (5 free papers lifetime)."""
-        try:
-            rows = await self._rest("POST", "rpc/check_user_quota", payload={"p_user_id": user_id})
-            return rows if isinstance(rows, bool) else rows[0] if rows else True
-        except Exception as exc:
-            logger.warning("check_user_quota failed, defaulting to allowed: %s", exc)
-            return True
+        """Check if user has remaining quota (always True — unlimited papers)."""
+        return True
 
     async def get_user_quota_info(self, user_id: str) -> dict[str, Any]:
-        """Get detailed quota information for display."""
+        """Get detailed quota information for display (unlimited papers)."""
         try:
             rows = await self._rest(
                 "GET", "user_paper_quotas",
-                params={"user_id": f"eq.{user_id}", "select": "papers_generated,free_papers_allowed,last_paper_at"},
+                params={"user_id": f"eq.{user_id}", "select": "papers_generated,last_paper_at"},
             )
-            if not rows:
-                return {"papers_generated": 0, "free_papers_allowed": 5, "last_paper_at": None}
-            return rows[0]
+            count = rows[0].get("papers_generated", 0) if rows else 0
+            last_paper = rows[0].get("last_paper_at") if rows else None
+            return {
+                "papers_generated": count,
+                "free_papers_allowed": -1,
+                "papers_remaining": 999999,
+                "unlimited": True,
+                "last_paper_at": last_paper,
+            }
         except Exception as exc:
-            logger.warning("get_user_quota_info failed, returning default quota: %s", exc)
-            return {"papers_generated": 0, "free_papers_allowed": 5, "last_paper_at": None}
+            logger.warning("get_user_quota_info failed: %s", exc)
+            return {
+                "papers_generated": 0,
+                "free_papers_allowed": -1,
+                "papers_remaining": 999999,
+                "unlimited": True,
+                "last_paper_at": None,
+            }
+
 
     async def claim_job(self, job_id: str) -> dict[str, Any] | None:
         rows = await self._rest("POST", "rpc/claim_research_job", payload={"p_job_id": job_id})

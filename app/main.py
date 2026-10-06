@@ -1,6 +1,6 @@
 """
-Delve – Multi-Agent Deep Research System
-═════════════════════════════════════════
+ResearchAgent – Multi-Agent Deep Research System
+═════════════════════════════════════════════════
 Main FastAPI application with WebSocket support.
 
 Endpoints:
@@ -38,7 +38,7 @@ logging.basicConfig(
     format="%(asctime)s  %(name)-25s  %(levelname)-7s  %(message)s",
     datefmt="%H:%M:%S",
 )
-logger = logging.getLogger("delve.main")
+logger = logging.getLogger("research_agent.main")
 
 
 def _validate_configuration() -> None:
@@ -50,11 +50,6 @@ def _validate_configuration() -> None:
         "SUPABASE_URL": settings.supabase_url,
         "SUPABASE_SERVICE_ROLE_KEY": settings.supabase_service_role_key,
         "WS_TICKET_SECRET": settings.ws_ticket_secret,
-        "JOB_DISPATCH_SECRET": settings.job_dispatch_secret,
-        "QSTASH_TOKEN": settings.qstash_token,
-        "PUBLIC_API_BASE_URL": settings.public_api_base_url,
-        "UPSTASH_REDIS_REST_URL": settings.upstash_redis_rest_url,
-        "UPSTASH_REDIS_REST_TOKEN": settings.upstash_redis_rest_token,
     }
     missing = [name for name, value in required.items() if not value]
     if missing:
@@ -66,7 +61,7 @@ def _validate_configuration() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("=" * 60)
-    logger.info("  Delve – Multi-Agent Deep Research System")
+    logger.info("  ResearchAgent – Autonomous Multi-Agent Deep Research System")
     logger.info("=" * 60)
     _validate_configuration()
 
@@ -87,14 +82,14 @@ async def lifespan(app: FastAPI):
         validation_task.cancel()
     await flush_pending_persists()
     await llm_client.close()
-    logger.info("Delve shut down cleanly")
+    logger.info("ResearchAgent shut down cleanly")
 
 
 # ── FastAPI App ───────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="Delve API",
-    description="Multi-Agent Deep Research & Paper Drafting System",
+    title="ResearchAgent API",
+    description="Autonomous Multi-Agent Deep Research & Paper Drafting System",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -106,7 +101,7 @@ app.add_middleware(
     allow_origin_regex=r"^https://([a-zA-Z0-9_-]+\.)*vercel\.app$",
     allow_credentials=False,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Delve-Job-Secret"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -132,7 +127,7 @@ app.include_router(upload_router)
 async def root():
     return {
         "status": "online",
-        "service": "Delve — Multi-Agent Deep Research System",
+        "service": "ResearchAgent — Autonomous Multi-Agent Deep Research System",
         "version": "1.0.0",
         "docs": "/docs",
     }
@@ -214,7 +209,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 async def health_check():
     return {
         "status": "healthy",
-        "service": "Delve",
+        "service": "ResearchAgent",
         "version": "1.0.0",
     }
 

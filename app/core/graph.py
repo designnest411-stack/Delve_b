@@ -1,6 +1,6 @@
 """
-Delve LangGraph Workflow
-─────────────────────────
+ResearchAgent LangGraph Workflow
+────────────────────────────────
 Defines the full research pipeline as a LangGraph StateGraph.
 
 Pipeline flow:
@@ -25,7 +25,7 @@ from app.core.agents import (
     debate_should_continue,
 )
 
-logger = logging.getLogger("delve.graph")
+logger = logging.getLogger("research_agent.graph")
 
 
 def build_research_graph(checkpointer: Any = None) -> Any:

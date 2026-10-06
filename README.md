@@ -1,4 +1,4 @@
-# Delve Backend — Multi-Agent Deep Research Engine
+# ResearchAgent Backend — Multi-Agent Deep Research Engine
 
 FastAPI backend service powering autonomous multi-agent academic research, literature synthesis, and publication-grade manuscript generation.
 
@@ -9,7 +9,7 @@ FastAPI backend service powering autonomous multi-agent academic research, liter
 - **Orchestration:** LangGraph / StateGraph
 - **LLM Engine:** Google Gemini REST API (Free-Tier Cascade & Cooldown Handler)
 - **Database:** Supabase (PostgreSQL, Row Level Security, Auth JWT, pgvector, Storage)
-- **Background Jobs:** Upstash QStash (Durable Execution) & Upstash Redis REST (Rate Limiting)
+- **Background Jobs:** Asyncio In-Process Execution & In-Memory Sliding Window Rate Limiting
 
 ---
 
@@ -38,6 +38,7 @@ Execute SQL migration scripts in order within the Supabase SQL Editor:
 1. `supabase/migrations/001_delve_public_beta.sql`
 2. `supabase/migrations/002_lifetime_quota.sql`
 3. `supabase/migrations/003_increase_paper_quota.sql`
+4. `supabase/migrations/004_unlimited_quota.sql`
 
 ---
 

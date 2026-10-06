@@ -1,6 +1,6 @@
 """
-Delve Configuration Module
-──────────────────────────
+ResearchAgent Configuration Module
+──────────────────────────────────
 Loads environment variables via pydantic-settings.
 All API keys and paths are centralized here.
 """
@@ -40,6 +40,8 @@ class Settings(BaseSettings):
             "gemma-4-31b-it",           # 30 RPM / 16k TPM / 14,400 RPD (Massive Daily Volume)
             "gemma-4-26b-a4b-it",       # 30 RPM / 16k TPM / 14,400 RPD (Massive Daily Volume)
             "gemini-flash-lite-latest", # 15 RPM / 250k TPM / 500 RPD (Safety Net Alias)
+            "gemini-2.5-flash-lite",    # 10 RPM / 250k TPM / 20 RPD (Legacy Safety Fallback)
+            "gemini-2.5-flash",         # 5 RPM / 250k TPM / 20 RPD (Legacy Safety Fallback)
         ],
         description="Priority cascade across all verified active free-tier models.",
     )
@@ -76,16 +78,6 @@ class Settings(BaseSettings):
     supabase_jwt_audience: str = Field(default="authenticated")
     supabase_storage_bucket: str = Field(default="delve-documents")
     ws_ticket_secret: str = Field(default="")
-    job_dispatch_secret: str = Field(default="")
-
-    # ── Upstash (QStash + Redis) ──────────────────────────────────────────
-    qstash_url: str = Field(default="https://qstash-us-east-1.upstash.io")
-    qstash_token: str = Field(default="")
-    qstash_current_signing_key: str = Field(default="")
-    qstash_next_signing_key: str = Field(default="")
-    public_api_base_url: str = Field(default="")
-    upstash_redis_rest_url: str = Field(default="")
-    upstash_redis_rest_token: str = Field(default="")
 
     # ── Safety limits ─────────────────────────────────────────────────────
     max_concurrent_jobs_per_user: int = Field(default=10, ge=1, le=50)

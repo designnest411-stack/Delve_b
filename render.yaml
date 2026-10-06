@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: delve-api
+    name: research-agent-api
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
@@ -36,16 +36,6 @@ services:
         value: delve-documents
       - key: WS_TICKET_SECRET
         generateValue: true
-      - key: JOB_DISPATCH_SECRET
-        generateValue: true
-      - key: QSTASH_TOKEN
-        sync: false
-      - key: PUBLIC_API_BASE_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_URL
-        sync: false
-      - key: UPSTASH_REDIS_REST_TOKEN
-        sync: false
       - key: MAX_CONCURRENT_JOBS_PER_USER
         value: "2"
       - key: MAX_RESEARCH_JOBS_PER_DAY
