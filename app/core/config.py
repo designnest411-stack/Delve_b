@@ -5,8 +5,11 @@ Loads environment variables via pydantic-settings.
 All API keys and paths are centralized here.
 """
 
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from pydantic import Field, field_validator
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
@@ -94,7 +97,7 @@ class Settings(BaseSettings):
     port: int = Field(default=10000)
 
     model_config = {
-        "env_file": ".env",
+        "env_file": (str(BACKEND_DIR / ".env"), ".env"),
         "env_file_encoding": "utf-8",
         "extra": "ignore",
         "enable_decoding": False,
