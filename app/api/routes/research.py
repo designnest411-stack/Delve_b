@@ -977,12 +977,14 @@ async def list_sessions(user: AuthenticatedUser = Depends(get_current_user)) -> 
 async def get_quota(user: AuthenticatedUser = Depends(get_current_user)) -> dict[str, Any]:
     """Get user's paper generation quota information (unlimited)."""
     try:
-        quota = await supabase_repository.get_user_quota_info(user.id)
+        sessions = await supabase_repository.list_sessions(user.id)
+        count = len(sessions)
+        last_paper = sessions[0].get("started_at") if sessions else None
         return {
-            "papers_generated": quota.get("papers_generated", 0),
+            "papers_generated": count,
             "papers_allowed": -1,
             "papers_remaining": 999999,
-            "last_paper_at": quota.get("last_paper_at"),
+            "last_paper_at": last_paper,
             "has_quota": True,
             "unlimited": True,
         }
