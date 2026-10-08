@@ -1050,10 +1050,12 @@ async def list_sessions(user: AuthenticatedUser = Depends(get_current_user)) -> 
     sessions: list[dict[str, Any]] = []
     for data in await supabase_repository.list_sessions(user.id):
         sid = str(data["id"])
+        raw_status = data.get("status", "unknown")
+        effective_status = "error" if raw_status in {"running", "queued"} and sid not in active_sessions else raw_status
         sessions.append({
             "session_id": sid,
             "topic": data.get("topic", ""),
-            "status": data.get("status", "unknown"),
+            "status": effective_status,
             "current_step": data.get("current_step", "unknown"),
             "created_at": data.get("started_at", ""),
             "updated_at": data.get("updated_at", ""),
