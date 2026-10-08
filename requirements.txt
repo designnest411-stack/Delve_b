@@ -24,6 +24,7 @@ tavily-python==0.5.0
 # PDF Parsing & Export
 pypdf==5.4.0
 reportlab==4.4.1
+matplotlib>=3.8.0
 
 # Config & Auth
 python-dotenv==1.1.0
