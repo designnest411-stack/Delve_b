@@ -930,18 +930,24 @@ async def download_paper_pdf(
     # Write to an isolated temp directory; ephemeral on Render which is intentional.
     tmp_dir = Path(tempfile.mkdtemp(prefix="research_pdf_"))
     out_path = tmp_dir / "research_paper.pdf"
-    await asyncio.to_thread(
-        generate_research_pdf,
-        topic=session.get("topic", "Research Paper"),
-        session_id=session_id,
-        analysis_markdown=analysis,
-        final_markdown=final_draft,
-        out_path=out_path,
-        resource_dir=tmp_dir,
-    )
+    try:
+        await asyncio.to_thread(
+            generate_research_pdf,
+            topic=session.get("topic", "Research Paper"),
+            session_id=session_id,
+            analysis_markdown=analysis,
+            final_markdown=final_draft,
+            out_path=out_path,
+            resource_dir=tmp_dir,
+        )
+    except Exception as exc:
+        logger.error("generate_research_pdf failed for session %s: %s", session_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
+
+    safe_topic = re.sub(r"[^a-zA-Z0-9_\-]+", "_", session.get("topic", "paper")).strip("_")[:40] or "paper"
     return FileResponse(
         path=str(out_path),
-        filename=f"research-paper-{session_id[:8]}.pdf",
+        filename=f"{safe_topic}-{session_id[:8]}.pdf",
         media_type="application/pdf",
     )
 

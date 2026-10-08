@@ -47,25 +47,116 @@ PAGE_WIDTH, PAGE_HEIGHT = A4
 PRINTABLE_WIDTH = PAGE_WIDTH - (1.6 * inch)  # 0.8 inch left and right margin
 
 
+GREEK_AND_MATH: list[tuple[str, str]] = [
+    (r"\\mathcal\{([A-Za-z])\}", r"\1"),
+    (r"\\mathbb\{([A-Za-z])\}", r"\1"),
+    (r"\\mathbf\{([A-Za-z0-9]+)\}", r"\1"),
+    (r"\\text\{([^\}]+)\}", r"\1"),
+    (r"\\theta", "θ"),
+    (r"\\lambda", "λ"),
+    (r"\\mu", "μ"),
+    (r"\\sigma", "σ"),
+    (r"\\alpha", "α"),
+    (r"\\beta", "β"),
+    (r"\\gamma", "γ"),
+    (r"\\delta", "δ"),
+    (r"\\epsilon", "ε"),
+    (r"\\Omega", "Ω"),
+    (r"\\phi", "ϕ"),
+    (r"\\Phi", "Φ"),
+    (r"\\in", " ∈ "),
+    (r"\\to", " → "),
+    (r"\\times", " × "),
+    (r"\\sum", "∑"),
+    (r"\\le", " ≤ "),
+    (r"\\ge", " ≥ "),
+    (r"\\neq", " ≠ "),
+    (r"\\approx", " ≈ "),
+    (r"\\{", "{"),
+    (r"\\}", "}"),
+]
+
+
+def _clean_latex_math(math_str: str) -> str:
+    s = math_str.strip()
+    for pattern, repl in GREEK_AND_MATH:
+        s = re.sub(pattern, repl, s)
+    s = re.sub(r"\\([a-zA-Z]+)", r"\1", s)
+    return s
+
+
 def _inline_markdown_to_html(text: str) -> str:
     cleaned = str(text or "").strip()
     # Strip markdown images or badges
     cleaned = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", cleaned)
     # Format links [Text](URL) -> Text
     cleaned = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", cleaned)
-    # Escape XML entities before formatting tags
+
+    placeholders: dict[str, str] = {}
+    p_idx = 0
+
+    # 1. Stash code
+    def _stash_code(m: re.Match) -> str:
+        nonlocal p_idx
+        key = f"___PH_CODE_{p_idx}___"
+        p_idx += 1
+        code_content = escape(m.group(1))
+        placeholders[key] = f'<font face="Courier" color="#0f172a">{code_content}</font>'
+        return key
+
+    cleaned = re.sub(r"`([^`]+)`", _stash_code, cleaned)
+
+    # 2. Stash display math $$...$$
+    def _stash_display_math(m: re.Match) -> str:
+        nonlocal p_idx
+        key = f"___PH_DMATH_{p_idx}___"
+        p_idx += 1
+        math_content = escape(_clean_latex_math(m.group(1)))
+        placeholders[key] = f'<font face="Courier" color="#1e293b"><b>{math_content}</b></font>'
+        return key
+
+    cleaned = re.sub(r"\$\$(.+?)\$\$", _stash_display_math, cleaned, flags=re.DOTALL)
+
+    # 3. Stash inline math $...$
+    def _stash_inline_math(m: re.Match) -> str:
+        nonlocal p_idx
+        key = f"___PH_IMATH_{p_idx}___"
+        p_idx += 1
+        math_content = escape(_clean_latex_math(m.group(1)))
+        placeholders[key] = f'<font face="Courier" color="#1e293b">{math_content}</font>'
+        return key
+
+    cleaned = re.sub(r"(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)", _stash_inline_math, cleaned)
+
+    # 4. Escape XML entities before formatting tags
     cleaned = escape(cleaned)
-    # Convert bold **text**
+
+    # 5. Convert bold **text**
     cleaned = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", cleaned)
-    # Convert italic *text* or _text_
+
+    # 6. Convert italic *text* or _text_ (only safe word-boundary underscores)
     cleaned = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"<i>\1</i>", cleaned)
-    cleaned = re.sub(r"(?<!_)_(?!\s)(.+?)(?<!\s)_(?!_)", r"<i>\1</i>", cleaned)
-    # Convert LaTeX math: $$formula$$ or $formula$
-    cleaned = re.sub(r"\$\$(.+?)\$\$", r'<font face="Courier" color="#1e293b"><b><i>\1</i></b></font>', cleaned)
-    cleaned = re.sub(r"\$(.+?)\$", r'<font face="Courier" color="#1e293b"><i>\1</i></font>', cleaned)
-    # Convert inline code `code`
-    cleaned = re.sub(r"`([^`]+)`", r'<font face="Courier" color="#0f172a">\1</font>', cleaned)
+    cleaned = re.sub(r"\b_([A-Za-z0-9]+?)_\b", r"<i>\1</i>", cleaned)
+
+    # 7. Restore placeholders
+    for key, val in placeholders.items():
+        cleaned = cleaned.replace(key, val)
+
     return cleaned
+
+
+def _safe_paragraph(raw_text_or_html: str, style, is_already_html: bool = False) -> Paragraph:
+    html_content = raw_text_or_html if is_already_html else _inline_markdown_to_html(raw_text_or_html)
+    try:
+        return Paragraph(html_content, style)
+    except Exception:
+        # Fallback to plain text stripped of HTML tags and cleanly escaped
+        clean_fallback = escape(re.sub(r"<[^>]+>", "", raw_text_or_html))
+        try:
+            return Paragraph(clean_fallback, style)
+        except Exception:
+            return Paragraph(escape(raw_text_or_html), style)
+
 
 
 def _parse_markdown_table(lines: list[str]) -> list[list[str]]:
@@ -282,7 +373,7 @@ def _table_flowable(table_rows: list[list[str]], usable_width: float = PRINTABLE
         while len(row_copy) < max_cols:
             row_copy.append("")
         cell_style = _CELL_HEAD_STYLE if r_idx == 0 else _CELL_STYLE
-        wrapped_row = [Paragraph(_inline_markdown_to_html(cell), cell_style) for cell in row_copy[:max_cols]]
+        wrapped_row = [_safe_paragraph(cell, cell_style) for cell in row_copy[:max_cols]]
         normalized_rows.append(wrapped_row)
 
     col_width = usable_width / float(max_cols)
@@ -333,14 +424,14 @@ def _markdown_to_story(markdown: str, resource_dir: Path, styles) -> list:
                 if text_lower.startswith("**abstract**") or text_lower.startswith("abstract —") or text_lower.startswith("abstract:"):
                     story.append(Spacer(1, 0.04 * inch))
                     story.append(HRFlowable(width="100%", thickness=0.6, color=RULE, spaceBefore=2, spaceAfter=6))
-                    story.append(Paragraph(_inline_markdown_to_html(text), styles["AbstractBody"]))
+                    story.append(_safe_paragraph(text, styles["AbstractBody"]))
                 elif text_lower.startswith("**keywords**") or text_lower.startswith("keywords:"):
-                    story.append(Paragraph(_inline_markdown_to_html(text), styles["Keywords"]))
+                    story.append(_safe_paragraph(text, styles["Keywords"]))
                     story.append(HRFlowable(width="100%", thickness=0.6, color=RULE, spaceBefore=2, spaceAfter=8))
                 elif in_references:
-                    story.append(Paragraph(_inline_markdown_to_html(text), styles["Reference"]))
+                    story.append(_safe_paragraph(text, styles["Reference"]))
                 else:
-                    story.append(Paragraph(_inline_markdown_to_html(text), styles["Body"]))
+                    story.append(_safe_paragraph(text, styles["Body"]))
             paragraph_buffer = []
 
     def flush_list():
@@ -349,10 +440,10 @@ def _markdown_to_story(markdown: str, resource_dir: Path, styles) -> list:
             item_style = styles["Reference"] if in_references else styles["Body"]
             if in_references:
                 for item in list_buffer:
-                    story.append(Paragraph(_inline_markdown_to_html(item), item_style))
+                    story.append(_safe_paragraph(item, item_style))
             else:
                 items = [
-                    ListItem(Paragraph(_inline_markdown_to_html(item), item_style), leftIndent=6)
+                    ListItem(_safe_paragraph(item, item_style), leftIndent=6)
                     for item in list_buffer
                 ]
                 story.append(ListFlowable(items, bulletType="bullet", leftIndent=14,
@@ -431,18 +522,18 @@ def _markdown_to_story(markdown: str, resource_dir: Path, styles) -> list:
                     section_counter += 1
                     heading_text = f"{section_counter}.&nbsp;&nbsp;{heading_text}"
                 story.append(Spacer(1, 0.06 * inch))
-                story.append(Paragraph(heading_text, styles["Section"]))
+                story.append(_safe_paragraph(heading_text, styles["Section"], is_already_html=True))
                 story.append(HRFlowable(width="100%", thickness=0.6, color=RULE,
                                         spaceBefore=2, spaceAfter=5))
             elif in_references:
                 story.append(Spacer(1, 0.08 * inch))
-                story.append(Paragraph(heading_text, styles["Section"]))
+                story.append(_safe_paragraph(heading_text, styles["Section"], is_already_html=True))
                 story.append(HRFlowable(width="100%", thickness=0.6, color=RULE,
                                         spaceBefore=2, spaceAfter=6))
             elif level == 3:
-                story.append(Paragraph(heading_text, styles["Subsection"]))
+                story.append(_safe_paragraph(heading_text, styles["Subsection"], is_already_html=True))
             else:
-                story.append(Paragraph(heading_text, styles["Subsubsection"]))
+                story.append(_safe_paragraph(heading_text, styles["Subsubsection"], is_already_html=True))
             idx += 1
             continue
 
@@ -454,7 +545,7 @@ def _markdown_to_story(markdown: str, resource_dir: Path, styles) -> list:
             idx += 1
             if idx < len(lines) and lines[idx].strip().startswith("*Figure:"):
                 caption = lines[idx].strip().strip("*")
-                story.append(Paragraph(_inline_markdown_to_html(caption), styles["Caption"]))
+                story.append(_safe_paragraph(caption, styles["Caption"]))
                 idx += 1
             else:
                 story.append(Spacer(1, 0.05 * inch))
@@ -475,8 +566,7 @@ def _markdown_to_story(markdown: str, resource_dir: Path, styles) -> list:
 
         if stripped.startswith(">"):
             flush_paragraph(); flush_list(); flush_table()
-            story.append(Paragraph(_inline_markdown_to_html(stripped.lstrip("> ").strip()),
-                                   styles["Callout"]))
+            story.append(_safe_paragraph(stripped.lstrip("> ").strip(), styles["Callout"]))
             idx += 1
             continue
 
@@ -581,11 +671,12 @@ def generate_research_pdf(
 
     story: list = [
         Spacer(1, 0.1 * inch),
-        Paragraph(_inline_markdown_to_html(title), styles["PaperTitle"]),
-        Paragraph(
+        _safe_paragraph(title, styles["PaperTitle"]),
+        _safe_paragraph(
             f"Autonomous Multi-Agent Synthesis Engine • ResearchAgent<br/>"
             f"<font color='#94a3b8' size='7.5'>Peer-Reviewed Methodology Synthesis • Published {current_date}</font>",
             styles["PaperMeta"],
+            is_already_html=True,
         ),
         HRFlowable(width="30%", thickness=1.0, color=ACCENT, spaceBefore=0, spaceAfter=10, hAlign="CENTER"),
     ]
