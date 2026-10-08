@@ -43,6 +43,7 @@ class ResearchState(TypedDict, total=False):
     strict_mode: bool
     max_debate_rounds: int
     paper_format: str
+    paper_type: str
 
     # ── Retrieval Output ──────────────────────────────────────────────────
     retrieved_papers: Annotated[list[dict[str, Any]], _merge_lists]

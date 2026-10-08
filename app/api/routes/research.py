@@ -62,6 +62,7 @@ class StartResearchRequest(BaseModel):
     max_debate_rounds: int | None = Field(default=None, ge=0, le=5)
     strict_mode: bool | None = None
     paper_format: Literal["academic", "ieee", "apa", "acm", "mla"] | None = "academic"
+    paper_type: Literal["experimental", "survey", "system", "position"] | None = "experimental"
     depth: Literal["quick", "standard", "deep"] | None = "standard"
     year_from: int | None = Field(default=None, ge=1900, le=2100)
     include_sources: list[str] | None = None
@@ -351,6 +352,7 @@ async def run_research_pipeline(
             "strict_mode": bool(controls.get("strict_mode", settings.strict_synthesis_mode)),
             "max_debate_rounds": int(controls.get("max_debate_rounds", settings.max_debate_rounds)),
             "paper_format": str(controls.get("paper_format", "academic")),
+            "paper_type": str(controls.get("paper_type", "experimental")),
             "planner_constraints": {
                 "depth": controls.get("depth", "standard"),
                 "year_from": controls.get("year_from"),
@@ -584,6 +586,7 @@ async def start_research(
         "max_debate_rounds": max(0, min(5, requested_rounds)),
         "strict_mode": bool(request.strict_mode) if request.strict_mode is not None else bool(settings.strict_synthesis_mode),
         "paper_format": (request.paper_format or "academic").strip().lower(),
+        "paper_type": (request.paper_type or "experimental").strip().lower(),
         "depth": request.depth or "standard",
         "year_from": request.year_from,
         "include_sources": request.include_sources or [],
