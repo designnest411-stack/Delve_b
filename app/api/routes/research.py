@@ -915,7 +915,9 @@ async def export_session_bundle(
 
 @router.get("/{session_id}/paper.pdf")
 async def download_paper_pdf(
-    session_id: str, user: AuthenticatedUser = Depends(get_current_user),
+    session_id: str,
+    format: str | None = None,
+    user: AuthenticatedUser = Depends(get_current_user),
 ) -> FileResponse:
     session = await _get_owned_session(session_id, user)
     if session.get("status") != "complete":
@@ -927,9 +929,19 @@ async def download_paper_pdf(
     if not final_draft and not analysis:
         raise HTTPException(status_code=404, detail="No paper content available for PDF export")
 
+    # Determine requested publication format (query param overrides session setting)
+    chosen_format = str(
+        format
+        or session.get("controls", {}).get("paper_format")
+        or session.get("paper_format")
+        or "ieee"
+    ).lower().strip()
+    if chosen_format not in {"ieee", "acm", "apa", "mla"}:
+        chosen_format = "ieee"
+
     # Write to an isolated temp directory; ephemeral on Render which is intentional.
     tmp_dir = Path(tempfile.mkdtemp(prefix="research_pdf_"))
-    out_path = tmp_dir / "research_paper.pdf"
+    out_path = tmp_dir / f"research_paper_{chosen_format}.pdf"
     try:
         await asyncio.to_thread(
             generate_research_pdf,
@@ -939,17 +951,87 @@ async def download_paper_pdf(
             final_markdown=final_draft,
             out_path=out_path,
             resource_dir=tmp_dir,
+            paper_format=chosen_format,
+            bibliography_data=result.get("bibliography", []),
         )
     except Exception as exc:
-        logger.error("generate_research_pdf failed for session %s: %s", session_id, exc, exc_info=True)
+        logger.error("generate_research_pdf failed for session %s (%s): %s", session_id, chosen_format, exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
 
-    safe_topic = re.sub(r"[^a-zA-Z0-9_\-]+", "_", session.get("topic", "paper")).strip("_")[:40] or "paper"
+    safe_topic = re.sub(r"[^a-zA-Z0-9_\-]+", "_", session.get("topic", "paper")).strip("_")[:35] or "paper"
     return FileResponse(
         path=str(out_path),
-        filename=f"{safe_topic}-{session_id[:8]}.pdf",
+        filename=f"{safe_topic}-{chosen_format.upper()}-{session_id[:8]}.pdf",
         media_type="application/pdf",
     )
+
+
+@router.get("/{session_id}/latex")
+async def download_paper_latex(
+    session_id: str,
+    format: str | None = None,
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> FileResponse:
+    import zipfile
+    session = await _get_owned_session(session_id, user)
+    if session.get("status") != "complete":
+        raise HTTPException(status_code=400, detail=f"Session is {session.get('status')}, paper not ready")
+
+    result = session.get("result", {}) or {}
+    analysis = str(result.get("research_analysis", "") or "")
+    final_draft = str(result.get("final_draft", result.get("final_paper", "")) or "")
+    if not final_draft and not analysis:
+        raise HTTPException(status_code=404, detail="No paper content available for LaTeX export")
+
+    chosen_format = str(
+        format
+        or session.get("controls", {}).get("paper_format")
+        or session.get("paper_format")
+        or "ieee"
+    ).lower().strip()
+    if chosen_format not in {"ieee", "acm", "apa", "mla"}:
+        chosen_format = "ieee"
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="research_latex_"))
+    bundle_dir = tmp_dir / "manuscript"
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from app.services.manuscript_builder import build_semantic_manuscript
+        from app.services.latex_exporter import export_latex_bundle
+        from app.services.pdf_export import _generate_academic_figures
+
+        # Proactively generate figure assets
+        try:
+            _generate_academic_figures(bundle_dir, session.get("topic", "Research Paper"), final_draft or analysis)
+        except Exception:
+            pass
+
+        doc = build_semantic_manuscript(
+            topic=session.get("topic", "Research Paper"),
+            markdown=final_draft or analysis,
+            paper_format=chosen_format,
+            bibliography_data=result.get("bibliography", []),
+            resource_dir=bundle_dir,
+        )
+        export_latex_bundle(doc, bundle_dir)
+
+        # Create zip bundle
+        zip_path = tmp_dir / f"{chosen_format}_bundle.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_f:
+            for file_path in bundle_dir.iterdir():
+                if file_path.is_file():
+                    zip_f.write(file_path, arcname=file_path.name)
+
+        safe_topic = re.sub(r"[^a-zA-Z0-9_\-]+", "_", session.get("topic", "paper")).strip("_")[:35] or "paper"
+        return FileResponse(
+            path=str(zip_path),
+            filename=f"{safe_topic}-{chosen_format.upper()}-LaTeX.zip",
+            media_type="application/zip",
+        )
+    except Exception as exc:
+        logger.error("LaTeX export failed for session %s: %s", session_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"LaTeX export failed: {exc}")
 
 
 @router.get("/{session_id}/slides")

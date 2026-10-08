@@ -937,17 +937,46 @@ def generate_research_pdf(
     final_markdown: str,
     out_path: Path,
     resource_dir: Path,
+    paper_format: str = "ieee",
+    bibliography_data: list[dict] | None = None,
 ) -> Path:
-    """Render the final manuscript as a clean, publication-grade academic PDF with figures and diagrams."""
+    """
+    Render publication-grade academic PDF according to official IEEE, ACM, APA, or MLA conventions.
+    Uses high-performance Typst compiler with fallback to ReportLab Platypus.
+    """
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    styles = _build_styles()
-
     manuscript = str(final_markdown or "").strip() or str(analysis_markdown or "").strip()
-    title = _extract_title(manuscript, topic)
 
     # 1. Proactively generate publication-grade system figures & empirical charts
-    _generate_academic_figures(resource_dir, topic, manuscript)
+    try:
+        _generate_academic_figures(resource_dir, topic, manuscript)
+    except Exception as exc:
+        pass
 
+    # 2. Primary: Compile via Typst publication engine with CSL bibliographies & multi-column grid
+    try:
+        from app.services.manuscript_builder import build_semantic_manuscript
+        from app.services.document_qa import validate_and_repair_manuscript
+        from app.services.typst_renderer import compile_manuscript_to_pdf
+
+        doc = build_semantic_manuscript(
+            topic=topic,
+            markdown=manuscript,
+            paper_format=paper_format,
+            bibliography_data=bibliography_data,
+            resource_dir=resource_dir,
+        )
+        doc, qa = validate_and_repair_manuscript(doc)
+        compiled_path = compile_manuscript_to_pdf(doc, out_path, resource_dir)
+        if compiled_path.exists() and compiled_path.stat().st_size > 1000:
+            return compiled_path
+    except Exception as typst_exc:
+        import logging
+        logging.getLogger("research_agent.pdf").warning("Typst compilation fallback triggered: %s", typst_exc)
+
+    # 3. Fallback: ReportLab Platypus Engine
+    styles = _build_styles()
+    title = _extract_title(manuscript, topic)
     decorator = AcademicCanvasDecorator(title)
 
     doc = SimpleDocTemplate(
@@ -983,3 +1012,4 @@ def generate_research_pdf(
         onLaterPages=decorator.on_later_pages,
     )
     return out_path
+
