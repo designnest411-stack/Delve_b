@@ -2824,7 +2824,7 @@ Write 6-8 extensive, connected paragraphs of formal academic text:
 
 ## 2. Theoretical Foundations and Problem Formulation
 Write an extensive multi-paragraph theoretical foundation:
-- Define core mathematical notations, formal paradigms, and baseline conceptual mechanics using LaTeX notation (e.g., $f(x)$, $\mathcal{L}_{total}$, $\mathbb{E}_{x \sim \mathcal{D}}$).
+- Define core mathematical notations, formal paradigms, and baseline conceptual mechanics using LaTeX notation (e.g., $f(x)$, $\\mathcal{L}_{total}$, $\\mathbb{E}_{x \\sim \\mathcal{D}}$).
 - Provide a rigorous formal definition block: **Definition 1 (Problem Formulation)** delineating the mathematical or systems inputs, outputs, and constraints.
 - Categorize the foundational taxonomy of existing approaches with comprehensive citations in "{paper_format}" format.
 - Contextualize how early paradigms evolved into modern state-of-the-art formulations.
