@@ -296,7 +296,7 @@ def _build_export_bundle(session_id: str, session: dict[str, Any]) -> dict[str, 
     }
     bibtex_entries = []
     for idx, b in enumerate(bibliography, start=1):
-        key = f"delve{idx}"
+        key = f"ref{idx}"
         bibtex_entries.append(
             f"@article{{{key}, title={{{b.get('title','')}}}, author={{{b.get('authors','')}}}, "
             f"year={{{b.get('year','')}}}, url={{{b.get('url','')}}}, doi={{{b.get('doi','')}}}}}"
@@ -848,7 +848,7 @@ async def chat_with_research(
     }
 
     system_prompt = (
-        "You are Delve Research Discussion Assistant. You answer questions about the selected research session. "
+        "You are ResearchAgent Discussion Assistant. You answer questions about the selected research session. "
         "Stay grounded in the provided session context and the relevant RAG document excerpts. Be concrete and analytical. "
         "If information is missing in session context, clearly say it is not available yet."
     )
@@ -928,8 +928,8 @@ async def download_paper_pdf(
         raise HTTPException(status_code=404, detail="No paper content available for PDF export")
 
     # Write to an isolated temp directory; ephemeral on Render which is intentional.
-    tmp_dir = Path(tempfile.mkdtemp(prefix="delve_pdf_"))
-    out_path = tmp_dir / "delve_paper.pdf"
+    tmp_dir = Path(tempfile.mkdtemp(prefix="research_pdf_"))
+    out_path = tmp_dir / "research_paper.pdf"
     await asyncio.to_thread(
         generate_research_pdf,
         topic=session.get("topic", "Research Paper"),
@@ -941,7 +941,7 @@ async def download_paper_pdf(
     )
     return FileResponse(
         path=str(out_path),
-        filename=f"delve-paper-{session_id[:8]}.pdf",
+        filename=f"research-paper-{session_id[:8]}.pdf",
         media_type="application/pdf",
     )
 
