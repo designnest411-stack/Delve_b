@@ -2824,7 +2824,7 @@ Write 6-8 extensive, connected paragraphs of formal academic text:
 
 ## 2. Theoretical Foundations and Problem Formulation
 Write an extensive multi-paragraph theoretical foundation:
-- Define core mathematical notations, formal paradigms, and baseline conceptual mechanics using LaTeX notation (e.g., $f(x)$, $\\mathcal{L}_{total}$, $\\mathbb{E}_{x \\sim \\mathcal{D}}$).
+- Define core mathematical notations, formal paradigms, and baseline conceptual mechanics using LaTeX notation (e.g., $f(x)$, $\\mathcal{{L}}_{{total}}$, $\\mathbb{{E}}_{{x \\sim \\mathcal{{D}}}}$).
 - Provide a rigorous formal definition block: **Definition 1 (Problem Formulation)** delineating the mathematical or systems inputs, outputs, and constraints.
 - Categorize the foundational taxonomy of existing approaches with comprehensive citations in "{paper_format}" format.
 - Contextualize how early paradigms evolved into modern state-of-the-art formulations.
@@ -2857,7 +2857,7 @@ Strictly synthesize these verified cross-paper analyses, empirical signals, and 
 Required structure for Part 2 (Continue directly from Section 4):
 ## 4. Algorithmic Mechanics, Methodologies & System Architectures
 Write a comprehensive technical deep-dive across 4-6 detailed subsections:
-- **4.1 Mathematical Formulations & Optimization Dynamics**: Detail objective functions, loss formulations (using LaTeX math blocks like $$\\mathcal{L} = \\mathcal{L}_{task} + \\lambda \\mathcal{R}$$), representation mechanics, and convergence dynamics.
+- **4.1 Mathematical Formulations & Optimization Dynamics**: Detail objective functions, loss formulations (using LaTeX math blocks like $$\\mathcal{{L}} = \\mathcal{{L}}_{{task}} + \\lambda \\mathcal{{R}}$$), representation mechanics, and convergence dynamics.
 - **4.2 Architectural Paradigms & Structural Components**: Rigorous taxonomy of core modules, feature representations, attention mechanisms, and pipeline workflows tailored directly to "{topic}".
 - **4.3 Methodological Trade-Offs & Complexity Bounds**: Analyze computational overhead, memory footprints, asymptotic complexity ($O(N)$, $O(N^2)$), sample efficiency, and scalability boundaries.
 - **4.4 Operational & Deployment Considerations**: Address latency, hardware constraints, distribution shifts, and domain-specific robustness.
@@ -2930,14 +2930,14 @@ async def _generate_final_paper(
     # Part 1: Abstract, Intro, Background & Thematic Survey (Sections 1-3)
     if config:
         await _send_status(config, "Composing Part 1: Abstract, Foundations & Literature Survey...", data={"node": "paper_architect", "step": 1})
-    prompt1 = PAPER_PART1_PROMPT.format(
-        topic=topic,
-        paper_format=paper_format,
-        literature_review=literature_review[:10000],
-        cross_paper_analysis=cross_text[:6000],
-        citation_info=citation_text[:7000],
-    )
     try:
+        prompt1 = PAPER_PART1_PROMPT.format(
+            topic=topic,
+            paper_format=paper_format,
+            literature_review=literature_review[:10000],
+            cross_paper_analysis=cross_text[:6000],
+            citation_info=citation_text[:7000],
+        )
         p1 = await llm_client.generate_content(
             prompt=prompt1,
             temperature=0.35,
@@ -2953,14 +2953,14 @@ async def _generate_final_paper(
     # Part 2: Algorithmic Mechanics & Comparative Empirical Evaluation (Sections 4-5)
     if config:
         await _send_status(config, "Composing Part 2: Algorithmic Mechanics & Comparative Evaluation...", data={"node": "paper_architect", "step": 2})
-    prompt2 = PAPER_PART2_PROMPT.format(
-        topic=topic,
-        paper_format=paper_format,
-        cross_paper_analysis=cross_text[:8000],
-        gaps_section=gaps_text[:6000],
-        citation_info=citation_text[:7000],
-    )
     try:
+        prompt2 = PAPER_PART2_PROMPT.format(
+            topic=topic,
+            paper_format=paper_format,
+            cross_paper_analysis=cross_text[:8000],
+            gaps_section=gaps_text[:6000],
+            citation_info=citation_text[:7000],
+        )
         p2 = await llm_client.generate_content(
             prompt=prompt2,
             temperature=0.35,
@@ -2976,14 +2976,14 @@ async def _generate_final_paper(
     # Part 3: Gaps, Roadmap, Engineering Takeaways, Conclusion & References (Sections 6-9 + References)
     if config:
         await _send_status(config, "Composing Part 3: Strategic Roadmap, Takeaways & References...", data={"node": "paper_architect", "step": 3})
-    prompt3 = PAPER_PART3_PROMPT.format(
-        topic=topic,
-        paper_format=paper_format,
-        gaps_section=gaps_text[:6000],
-        gap_critique=gap_critique[:3000],
-        citation_info=citation_text[:7000],
-    )
     try:
+        prompt3 = PAPER_PART3_PROMPT.format(
+            topic=topic,
+            paper_format=paper_format,
+            gaps_section=gaps_text[:6000],
+            gap_critique=gap_critique[:3000],
+            citation_info=citation_text[:7000],
+        )
         p3 = await llm_client.generate_content(
             prompt=prompt3,
             temperature=0.35,

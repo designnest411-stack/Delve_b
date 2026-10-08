@@ -43,8 +43,6 @@ class Settings(BaseSettings):
             "gemma-4-31b-it",           # 30 RPM / 16k TPM / 14,400 RPD (Massive Daily Volume)
             "gemma-4-26b-a4b-it",       # 30 RPM / 16k TPM / 14,400 RPD (Massive Daily Volume)
             "gemini-flash-lite-latest", # 15 RPM / 250k TPM / 500 RPD (Safety Net Alias)
-            "gemini-2.5-flash-lite",    # 10 RPM / 250k TPM / 20 RPD (Legacy Safety Fallback)
-            "gemini-2.5-flash",         # 5 RPM / 250k TPM / 20 RPD (Legacy Safety Fallback)
         ],
         description="Priority cascade across all verified active free-tier models.",
     )

@@ -217,6 +217,12 @@ class GeminiClient:
                             await asyncio.sleep(2.0)
                             continue
 
+                        elif resp.status_code == 404:
+                            last_error = f"HTTP 404 on {model}: {resp.text[:200]}"
+                            self._model_cooldowns[model] = time.time() + 86400.0 * 7
+                            logger.warning("Gemini model %s returned 404 (unavailable). Cooldown set for 7 days. Rotating to next model...", model)
+                            break
+
                         else:
                             error_text = resp.text[:400]
                             last_error = f"HTTP {resp.status_code} on {model}: {error_text}"
