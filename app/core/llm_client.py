@@ -33,24 +33,53 @@ class GeminiClient:
         self._client: Optional[httpx.AsyncClient] = None
         self._client_lock = asyncio.Lock()
         self._model_cooldowns: dict[str, float] = {}
+        self._model_timestamps: dict[str, list[float]] = {}
         self._last_request_time: float = 0.0
         self._pacer_lock = asyncio.Lock()
 
     def _get_models_cascade(self) -> List[str]:
-        """Return the prioritized cascade of models, filtering out those currently in cooldown."""
-        primary = settings.gemini_primary_model
-        fallbacks = [m for m in settings.gemini_fallback_models if m != primary]
-        all_models = [primary] + fallbacks
-
+        """
+        Return an intelligently prioritized cascade of models:
+        1. Balances load between gemini-3.1-flash-lite and gemini-3.5-flash-lite (15 RPM / 500 RPD each).
+        2. Automatically routes to whichever workhorse model has lower request load in the last 60s.
+        3. Excludes models in active cooldown.
+        4. Cascades to gemini-flash-lite-latest, then reasoning models as backup.
+        """
         now = time.time()
         # Clean expired cooldowns
-        active_cooldowns = {m: exp for m, exp in self._model_cooldowns.items() if exp > now}
-        self._model_cooldowns = active_cooldowns
+        self._model_cooldowns = {m: exp for m, exp in self._model_cooldowns.items() if exp > now}
 
-        # Prioritize models not in cooldown
-        available = [m for m in all_models if m not in active_cooldowns]
+        # Clean timestamps older than 60s
+        for m in list(self._model_timestamps.keys()):
+            self._model_timestamps[m] = [t for t in self._model_timestamps[m] if now - t < 60.0]
+
+        # Primary high-quota workhorse models (500 RPD, 15 RPM each)
+        workhorses = [
+            settings.gemini_primary_model,
+            "gemini-3.5-flash-lite",
+            "gemini-flash-lite-latest",
+        ]
+        seen = set()
+        dedup_workhorses = []
+        for m in workhorses:
+            if m and m not in seen:
+                seen.add(m)
+                dedup_workhorses.append(m)
+
+        # Other models (20 RPD, used strictly as emergency fallback)
+        other_fallbacks = [m for m in settings.gemini_fallback_models if m not in seen]
+
+        # Prioritize workhorses not in cooldown, sorted by fewest requests in the last 60s
+        avail_workhorses = [m for m in dedup_workhorses if m not in self._model_cooldowns]
+        avail_workhorses.sort(key=lambda m: len(self._model_timestamps.get(m, [])))
+
+        # Other available fallbacks
+        avail_others = [m for m in other_fallbacks if m not in self._model_cooldowns]
+
+        available = avail_workhorses + avail_others
         if not available:
-            # If all are in cooldown, sort by earliest cooldown expiry
+            # If all are in cooldown, sort by earliest expiry
+            all_models = dedup_workhorses + other_fallbacks
             available = sorted(all_models, key=lambda m: self._model_cooldowns.get(m, 0.0))
 
         return available
@@ -186,6 +215,7 @@ class GeminiClient:
 
                         if resp.status_code == 200:
                             data = resp.json()
+                            self._model_timestamps.setdefault(model, []).append(time.time())
                             usage = data.get("usageMetadata", {})
                             await record_usage({
                                 "input_tokens": usage.get("promptTokenCount", 0),
