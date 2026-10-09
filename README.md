@@ -73,15 +73,28 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 ## API Endpoints
 
-- `POST /research/start` — Start an autonomous research run (topic, depth, paper_format, paper_type, uploaded_paper_ids).
+### Research Lifecycle & Management
+- `POST /research/start` — Start an autonomous research run (`topic`, `depth`, `paper_format`, `paper_type`, `uploaded_paper_ids`).
+- `GET /research/{session_id}/status` — Poll current session status and active agent node.
+- `GET /research/{session_id}/detail` — Comprehensive session breakdown with timeline, token metrics, and gaps.
+- `GET /research/{session_id}/timeline` — Deliberation event log and milestone timeline.
+- `POST /research/{session_id}/cancel` — Cancel an in-progress research session.
+- `POST /research/{session_id}/retry` — Retry an interrupted or failed session.
+- `POST /research/{session_id}/resume` — Resume an active or paused session.
+- `DELETE /research/{session_id}` — Remove a research session and clean up associated records.
+- `GET /research/sessions/list` — List user's historical research sessions.
+- `GET /research/quota` — Inspect user account quota and remaining generation allowances.
+
+### Manuscript, Export & Presentation
 - `GET /research/{session_id}/paper` — Fetch the final manuscript, metadata, and bibliography.
 - `GET /research/{session_id}/paper.pdf?format=ieee` — Download compiled publication PDF (supports `ieee`, `acm`, `apa`, `mla`).
 - `GET /research/{session_id}/latex?format=ieee` — Download complete LaTeX source, `.bib`, and figures `.zip` archive.
-- `GET /research/{session_id}/status` — Poll current session status and active agent node.
-- `GET /research/{session_id}/detail` — Comprehensive session breakdown with timeline, token metrics, and gaps.
-- `POST /research/{session_id}/cancel` — Cancel an in-progress research session.
-- `POST /research/{session_id}/retry` — Retry an interrupted or failed session.
-- `GET /research/sessions/list` — List user's historical research sessions.
+- `GET /research/{session_id}/slides` — Export auto-generated academic presentation slide deck.
+- `GET /research/{session_id}/export` — Export raw manuscript payload in JSON or Markdown.
+
+### Interactive Chat & RAG Document Upload
+- `POST /research/{session_id}/chat` — Multi-turn conversational Q&A grounded in the generated manuscript.
+- `GET /research/{session_id}/chat` — Retrieve session chat history.
 - `POST /upload/pdf` — Upload custom reference PDF documents to Supabase storage and compute vector embeddings.
 - `POST /research/{session_id}/ws-ticket` — Generate short-lived (60s) HMAC ticket for WebSocket streaming.
 - `WS /ws/{session_id}?ticket=...` — Real-time deliberation and node progression stream.
@@ -91,14 +104,17 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ## Verification & Testing
 
 ```bash
-# Test all external services (Tavily, Gemini, Supabase)
-python scratch/test_all_services.py
+# Test all external services (Tavily search, Gemini LLM with rate pacing, Supabase database & storage)
+python test_all_services.py
 
-# Test compilation of all 4 publication PDF standards
+# Test compilation of all 4 publication PDF standards (IEEE, ACM, APA 7th, MLA 9th)
 python test_generate_four_papers.py
 ```
 
 ---
 
 ## Production Deployment (Render / Docker)
-Configured for automated zero-downtime deployment on Render using `render.yaml` and the root `Dockerfile`.
+Configured for automated zero-downtime deployment on Render using `render.yaml` and the root `Dockerfile`:
+- Repository: `https://github.com/designnest411-stack/Delve_b.git`
+- Environment Variables: `GEMINI_API_KEY`, `TAVILY_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `WS_TICKET_SECRET`.
+
