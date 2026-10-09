@@ -28,6 +28,25 @@ from app.services.manuscript_schema import (
 )
 
 
+GREEK_LETTERS = [
+    "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta",
+    "iota", "kappa", "lambda", "mu", "nu", "xi", "pi", "rho", "sigma",
+    "tau", "upsilon", "phi", "chi", "psi", "omega",
+    "Alpha", "Beta", "Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi",
+    "Sigma", "Phi", "Psi", "Omega",
+]
+
+KNOWN_MATH_IDENTIFIERS = set(GREEK_LETTERS) | {
+    "sin", "cos", "tan", "cot", "sec", "csc", "arcsin", "arccos", "arctan",
+    "sinh", "cosh", "tanh", "log", "ln", "exp", "min", "max", "inf", "sup",
+    "lim", "det", "dim", "gcd", "deg", "arg", "mod", "hom", "ker", "sqrt",
+    "cal", "bold", "bb", "frak", "mono", "dot", "times", "div", "plus",
+    "minus", "product", "sum", "integral", "arrow", "top", "bot", "oo",
+    "ell", "in", "notin", "subset", "subseteq", "approx", "sim", "tilde",
+    "diff", "nabla", "forall", "exists", "union", "sect", "none", "pi"
+}
+
+
 def _escape_typst_text(text: str, valid_labels: set[str] | None = None) -> str:
     """Escape Typst syntax characters in plain text prose."""
     s = str(text or "")
@@ -42,9 +61,19 @@ def _escape_typst_text(text: str, valid_labels: set[str] | None = None) -> str:
                 return f"@{lbl}"
             return f"\\@{lbl}"
         s = re.sub(r"(?<!\\)@([a-zA-Z0-9_\-]+)", _check_at, s)
+
+        # Protect valid labels <label>, but escape any other '<'
+        def _check_label(m: re.Match) -> str:
+            lbl = m.group(1)
+            if lbl in valid_labels:
+                return f"<{lbl}>"
+            return f"\\<{lbl}>"
+        s = re.sub(r"<([a-zA-Z0-9_\-]+)>", _check_label, s)
+        s = re.sub(r"<(?![a-zA-Z0-9_\-]+>)", r"\<", s)
     else:
         # Default: escape single-character labels like @k, @1, or email symbols
         s = re.sub(r"(?<!\\)@(?=[0-9]|[a-zA-Z0-9_\-\.]+@[a-zA-Z0-9_\-]+|\b[a-zA-Z]\b)", r"\@", s)
+        s = s.replace("<", r"\<")
 
     return s
 
@@ -62,8 +91,8 @@ def _clean_latex_to_typst_math(latex: str) -> str:
     s = s.replace(r"\left|", "|").replace(r"\right|", "|")
     s = s.replace(r"\|", "||")
 
-    # Functions and operators
-    s = re.sub(r"\\operatorname\{([^{}]+)\}", r'"\1"', s)
+    # Functions, relations, operators
+    s = re.sub(r"\\(?:operatorname|mathrm|text|mathbf|mathit)\{([^{}]+)\}", r'"\1"', s)
     s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"(\1) / (\2)", s)
     s = re.sub(r"\\sqrt\{([^{}]+)\}", r"sqrt(\1)", s)
     s = re.sub(r"\\prod(?=[^a-zA-Z]|$)", "product", s)
@@ -71,7 +100,14 @@ def _clean_latex_to_typst_math(latex: str) -> str:
     s = re.sub(r"\\int(?=[^a-zA-Z]|$)", "integral", s)
     s = re.sub(r"\\cdot(?=[^a-zA-Z]|$)", " dot ", s)
     s = re.sub(r"\\times(?=[^a-zA-Z]|$)", " times ", s)
+    s = re.sub(r"\\sim(?=[^a-zA-Z]|$)", " ~ ", s)
+    s = re.sub(r"\\approx(?=[^a-zA-Z]|$)", " approx ", s)
+    s = re.sub(r"\\pm(?=[^a-zA-Z]|$)", " plus.minus ", s)
+    s = re.sub(r"\\mp(?=[^a-zA-Z]|$)", " minus.plus ", s)
     s = re.sub(r"\\in(?=[^a-zA-Z]|$)", " in ", s)
+    s = re.sub(r"\\notin(?=[^a-zA-Z]|$)", " notin ", s)
+    s = re.sub(r"\\subset(?=[^a-zA-Z]|$)", " subset ", s)
+    s = re.sub(r"\\subseteq(?=[^a-zA-Z]|$)", " subseteq ", s)
     s = re.sub(r"\\mid(?=[^a-zA-Z]|$)", " | ", s)
     s = re.sub(r"\\top(?=[^a-zA-Z]|$)", "top", s)
     s = re.sub(r"\\exp(?=[^a-zA-Z]|$)", "exp", s)
@@ -79,37 +115,68 @@ def _clean_latex_to_typst_math(latex: str) -> str:
     s = re.sub(r"\\ln(?=[^a-zA-Z]|$)", "ln", s)
     s = re.sub(r"\\to(?=[^a-zA-Z]|$)", " arrow ", s)
     s = re.sub(r"\\rightarrow(?=[^a-zA-Z]|$)", " arrow ", s)
+    s = re.sub(r"\\leftarrow(?=[^a-zA-Z]|$)", " arrow.l ", s)
     s = re.sub(r"\\leq?(?=[^a-zA-Z]|$)", " <= ", s)
     s = re.sub(r"\\geq?(?=[^a-zA-Z]|$)", " >= ", s)
     s = re.sub(r"\\neq(?=[^a-zA-Z]|$)", " != ", s)
-    s = re.sub(r"\\approx(?=[^a-zA-Z]|$)", " approx ", s)
     s = re.sub(r"\\infty(?=[^a-zA-Z]|$)", "oo", s)
+    s = re.sub(r"\\quad(?=[^a-zA-Z]|$)", " ", s)
+    s = re.sub(r"\\qquad(?=[^a-zA-Z]|$)", " ", s)
+    s = re.sub(r"\\dots(?=[^a-zA-Z]|$)", "...", s)
+    s = re.sub(r"\\cdots(?=[^a-zA-Z]|$)", "...", s)
+    s = re.sub(r"\\ldots(?=[^a-zA-Z]|$)", "...", s)
+    s = re.sub(r"\\ell(?=[^a-zA-Z]|$)", "ell", s)
+    s = re.sub(r"\\nabla(?=[^a-zA-Z]|$)", "nabla", s)
+    s = re.sub(r"\\partial(?=[^a-zA-Z]|$)", "diff", s)
+    s = re.sub(r"\\forall(?=[^a-zA-Z]|$)", "forall", s)
+    s = re.sub(r"\\exists(?=[^a-zA-Z]|$)", "exists", s)
 
     # Greek letters
-    greek = [
-        "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta",
-        "iota", "kappa", "lambda", "mu", "nu", "xi", "pi", "rho", "sigma",
-        "tau", "upsilon", "phi", "chi", "psi", "omega",
-        "Alpha", "Beta", "Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi",
-        "Sigma", "Phi", "Psi", "Omega",
-    ]
-    for g in greek:
+    for g in GREEK_LETTERS:
         s = re.sub(rf"\\{g}(?=[^a-zA-Z]|$)", g, s)
 
     # Clean fonts and tags
     s = re.sub(r"\\mathbf\{([^{}]+)\}", r"bold(\1)", s)
     s = re.sub(r"\\mathbb\{([^{}]+)\}", r"bb(\1)", s)
     s = re.sub(r"\\mathcal\{([^{}]+)\}", r"cal(\1)", s)
-    s = re.sub(r"\\text\{([^{}]+)\}", r'"\1"', s)
 
     # Convert LaTeX brace scoping _{...} and ^{...} to Typst paren scoping _(...) and ^(...)
     for _ in range(3):
-        s = re.sub(r"_\{([^{}]+)\}", r"_(\1)", s)
-        s = re.sub(r"\^\{([^{}]+)\}", r"^(\1)", s)
+        s = re.sub(r"([_\^])\{([^{}]+)\}", r"\1(\2)", s)
+
+    # Convert standalone words that might be LaTeX relations
+    s = re.sub(r"\bsim\b", " ~ ", s)
 
     # Strip leftover backslashes
-    s = re.sub(r"\\([a-zA-Z]+)", r"\1", s)
+    def _clean_bs(m: re.Match) -> str:
+        w = m.group(1)
+        if w in KNOWN_MATH_IDENTIFIERS:
+            return w
+        return f'"{w}"'
+    s = re.sub(r"\\([a-zA-Z]+)", _clean_bs, s)
+
+    # 1. Protect existing strings "..."
+    strings: list[str] = []
+    def _save_str(m: re.Match) -> str:
+        idx = len(strings)
+        strings.append(m.group(0))
+        return f"___MSTR_{idx}___"
+    s = re.sub(r'"[^"]*"', _save_str, s)
+
+    # 2. Quote any identifier of length >= 2 that is not known
+    def _check_word(m: re.Match) -> str:
+        w = m.group(0)
+        if w.lower() in KNOWN_MATH_IDENTIFIERS or w in KNOWN_MATH_IDENTIFIERS:
+            return w
+        return f'"{w}"'
+    s = re.sub(r"\b[a-zA-Z]{2,}\b", _check_word, s)
+
+    # 3. Restore strings
+    for i, orig in enumerate(strings):
+        s = s.replace(f"___MSTR_{i}___", orig)
+
     return s.strip()
+
 
 
 def _format_markdown_prose_for_typst(text: str, valid_labels: set[str] | None = None) -> str:

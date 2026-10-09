@@ -686,21 +686,6 @@ def _markdown_to_story(markdown: str, resource_dir: Path, styles, topic: str = "
                 else:
                     story.append(_safe_paragraph(text, styles["Body"]))
 
-                    # If we are in Section 4 and haven't inserted Figure 1 yet, insert it right after the paragraph
-                    if section_counter == 4 and not inserted_fig1 and fig1_path.exists():
-                        story.append(Spacer(1, 0.06 * inch))
-                        img1 = Image(str(fig1_path))
-                        img1._restrictSize(PRINTABLE_WIDTH, 3.2 * inch)
-                        img1.hAlign = "CENTER"
-                        story.append(img1)
-                        story.append(_safe_paragraph(
-                            f"<i>Figure 1: Architectural framework of hybrid vision transformer and convolutional networks for {topic.lower() or 'multi-scale medical image segmentation'}.</i>",
-                            styles["Caption"],
-                            is_already_html=True,
-                        ))
-                        story.append(Spacer(1, 0.06 * inch))
-                        inserted_fig1 = True
-
             paragraph_buffer = []
 
     def flush_list():
@@ -722,28 +707,13 @@ def _markdown_to_story(markdown: str, resource_dir: Path, styles, topic: str = "
             list_buffer = []
 
     def flush_table():
-        nonlocal table_buffer, inserted_fig2
+        nonlocal table_buffer
         if table_buffer:
             rows = _parse_markdown_table(table_buffer)
             if rows:
                 story.append(Spacer(1, 0.04 * inch))
                 story.append(_table_flowable(rows))
                 story.append(Spacer(1, 0.06 * inch))
-
-                # Insert Figure 2 (Empirical Pareto Trade-off) right below Table 1 in Section 5
-                if not inserted_fig2 and fig2_path.exists():
-                    story.append(Spacer(1, 0.06 * inch))
-                    img2 = Image(str(fig2_path))
-                    img2._restrictSize(PRINTABLE_WIDTH, 3.2 * inch)
-                    img2.hAlign = "CENTER"
-                    story.append(img2)
-                    story.append(_safe_paragraph(
-                        "<i>Figure 2: Empirical Pareto trade-off between segmentation accuracy (DSC %) and real-time edge inference latency across representative paradigms.</i>",
-                        styles["Caption"],
-                        is_already_html=True,
-                    ))
-                    story.append(Spacer(1, 0.08 * inch))
-                    inserted_fig2 = True
 
             table_buffer = []
 
@@ -947,13 +917,7 @@ def generate_research_pdf(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     manuscript = str(final_markdown or "").strip() or str(analysis_markdown or "").strip()
 
-    # 1. Proactively generate publication-grade system figures & empirical charts
-    try:
-        _generate_academic_figures(resource_dir, topic, manuscript)
-    except Exception as exc:
-        pass
-
-    # 2. Primary: Compile via Typst publication engine with CSL bibliographies & multi-column grid
+    # 1. Primary: Compile via Typst publication engine with CSL bibliographies & multi-column grid
     try:
         from app.services.manuscript_builder import build_semantic_manuscript
         from app.services.document_qa import validate_and_repair_manuscript
