@@ -78,6 +78,47 @@ def _escape_typst_text(text: str, valid_labels: set[str] | None = None) -> str:
     return s
 
 
+def _clean_nested_fractions(s: str) -> str:
+    """Accurately convert LaTeX \\frac{A}{B} to ((A) / (B)) even with arbitrary nested braces."""
+    while True:
+        m = re.search(r"\\frac\{", s)
+        if not m:
+            break
+        start_num = m.end()
+        depth = 1
+        i = start_num
+        while i < len(s) and depth > 0:
+            if s[i] == '{':
+                depth += 1
+            elif s[i] == '}':
+                depth -= 1
+            i += 1
+        if depth != 0:
+            break
+        num = s[start_num:i-1]
+        
+        rest_idx = i
+        while rest_idx < len(s) and s[rest_idx].isspace():
+            rest_idx += 1
+        if rest_idx >= len(s) or s[rest_idx] != '{':
+            break
+        start_den = rest_idx + 1
+        depth = 1
+        j = start_den
+        while j < len(s) and depth > 0:
+            if s[j] == '{':
+                depth += 1
+            elif s[j] == '}':
+                depth -= 1
+            j += 1
+        if depth != 0:
+            break
+        den = s[start_den:j-1]
+        
+        s = s[:m.start()] + f"(({num}) / ({den}))" + s[j:]
+    return s
+
+
 def _clean_latex_to_typst_math(latex: str) -> str:
     """Convert LaTeX math syntax to Typst math syntax."""
     s = str(latex or "").strip()
@@ -93,8 +134,13 @@ def _clean_latex_to_typst_math(latex: str) -> str:
 
     # Functions, relations, operators
     s = re.sub(r"\\(?:operatorname|mathrm|text|mathbf|mathit)\{([^{}]+)\}", r'"\1"', s)
-    s = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"(\1) / (\2)", s)
+    s = _clean_nested_fractions(s)
     s = re.sub(r"\\sqrt\{([^{}]+)\}", r"sqrt(\1)", s)
+    s = re.sub(r"\\hat\{([^{}]+)\}", r"hat(\1)", s)
+    s = re.sub(r"\\hat\s+([a-zA-Z])\b", r"hat(\1)", s)
+    s = re.sub(r"\\bar\{([^{}]+)\}", r"macron(\1)", s)
+    s = re.sub(r"\\tilde\{([^{}]+)\}", r"tilde(\1)", s)
+    s = re.sub(r"\\vec\{([^{}]+)\}", r"arrow(\1)", s)
     s = re.sub(r"\\prod(?=[^a-zA-Z]|$)", "product", s)
     s = re.sub(r"\\sum(?=[^a-zA-Z]|$)", "sum", s)
     s = re.sub(r"\\int(?=[^a-zA-Z]|$)", "integral", s)
@@ -143,6 +189,7 @@ def _clean_latex_to_typst_math(latex: str) -> str:
     # Convert LaTeX brace scoping _{...} and ^{...} to Typst paren scoping _(...) and ^(...)
     for _ in range(3):
         s = re.sub(r"([_\^])\{([^{}]+)\}", r"\1(\2)", s)
+
 
     # Convert standalone words that might be LaTeX relations
     s = re.sub(r"\bsim\b", " ~ ", s)
@@ -229,10 +276,10 @@ def _format_markdown_prose_for_typst(text: str, valid_labels: set[str] | None = 
     for i, code in enumerate(codes):
         s = s.replace(f"___TYPST_CODE_{i}___", f"`{code}`")
 
-    # 8. Restore inline math
+    # 8. Restore inline math (no boundary spaces so Typst keeps it inline and unnumbered)
     for i, m in enumerate(imath):
-        typ_m = _clean_latex_to_typst_math(m)
-        s = s.replace(f"___TYPST_IMATH_{i}___", f"$ {typ_m} $")
+        typ_m = _clean_latex_to_typst_math(m).strip()
+        s = s.replace(f"___TYPST_IMATH_{i}___", f"${typ_m}$")
 
     # 9. Restore display math
     for i, m in enumerate(dmath):
@@ -302,6 +349,8 @@ class TypstDocumentBuilder:
         justify_bool = "true" if typo.text_align == "justify" else "false"
         self.lines.append(f'#set par(justify: {justify_bool}, leading: {typo.line_spacing * 0.45}em)')
         self.lines.append('#set math.equation(numbering: "(1)")')
+        self.lines.append('#show math.equation.where(block: false): set math.equation(numbering: none)')
+
 
         # Figure and Table supplements
         if self.profile.name == "ieee":
@@ -437,19 +486,21 @@ class TypstDocumentBuilder:
         level = sec.level
         title = sec.title
 
+        clean_title = re.sub(r"^\d+[\.\)]\s*", "", title).strip()
+
         if p.name == "ieee":
             if level == 1:
-                # Roman numeral heading
-                roman_num = sec.number if sec.number and sec.number.isupper() else _to_roman(sec.id)
-                self.lines.append(f'\n#align(center)[#text(size: 10pt)[#smallcaps[{roman_num}. {title}]]]\n#v(0.4em)')
+                # Roman numeral heading computed strictly from section number
+                roman_num = _to_roman(sec.number or sec.id)
+                self.lines.append(f'\n#align(center)[#text(size: 10pt)[#smallcaps[{roman_num}. {clean_title.upper()}]]]\n#v(0.4em)')
             elif level == 2:
-                self.lines.append(f'\n#text(size: 10pt, style: "italic")[_{title}_]\n#v(0.3em)')
+                self.lines.append(f'\n#text(size: 10pt, style: "italic")[#emph[{title}]]\n#v(0.3em)')
             else:
-                self.lines.append(f'\n#text(size: 9.5pt, style: "italic")[_{title}:_] ')
+                self.lines.append(f'\n#text(size: 9.5pt, style: "italic")[#emph[{title}:]] ')
 
         elif p.name == "acm":
             if level == 1:
-                self.lines.append(f'\n= {title.upper()}\n')
+                self.lines.append(f'\n= {clean_title.upper()}\n')
             elif level == 2:
                 self.lines.append(f'\n== {title}\n')
             else:
@@ -457,7 +508,7 @@ class TypstDocumentBuilder:
 
         elif p.name == "apa":
             if level == 1:
-                self.lines.append(f'\n#align(center)[#text(weight: "bold")[{title}]]\n')
+                self.lines.append(f'\n#align(center)[#text(weight: "bold")[{clean_title}]]\n')
             elif level == 2:
                 self.lines.append(f'\n#text(weight: "bold")[{title}]\n')
             else:
@@ -465,7 +516,7 @@ class TypstDocumentBuilder:
 
         elif p.name == "mla":
             if level == 1:
-                self.lines.append(f'\n#text(weight: "bold")[{title}]\n')
+                self.lines.append(f'\n#text(weight: "bold")[{clean_title}]\n')
             else:
                 self.lines.append(f'\n#text(style: "italic")[{title}]\n')
 
@@ -538,11 +589,12 @@ class TypstDocumentBuilder:
         
         csl = p.citation.csl_style
         heading_title = p.citation.bibliography_heading
-        self.lines.append(f'#bibliography("{bib_filename}", title: [{heading_title}], style: "{csl}")')
+        self.lines.append(f'#bibliography("{bib_filename}", title: [{heading_title}], style: "{csl}", full: true)')
 
         # Close two-column block if opened
         if p.geometry.columns == 2:
             self.lines.append("]")
+
 
 
 def _to_roman(val: Any) -> str:

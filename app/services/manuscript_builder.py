@@ -147,19 +147,35 @@ def build_semantic_manuscript(
     # Parse sections
     sections: list[Section] = []
     current_sec: Optional[Section] = None
-    sec_idx = 1
+    major_sec_idx = 1
+    subsec_idx = 1
     table_idx = 1
     eq_idx = 1
 
     lines = text.splitlines()
     i = 0
     in_abstract = False
+    seen_title_heading = False
 
     while i < len(lines):
         line = lines[i].rstrip()
         stripped = line.strip()
 
         if not stripped:
+            i += 1
+            continue
+
+        # Skip horizontal dividers (--- or *** or ___)
+        if re.match(r"^[\s\-_*]{3,}$", stripped):
+            i += 1
+            continue
+
+        # Skip standalone Abstract/Keywords metadata lines from leaking into section prose
+        if stripped.lower().startswith((
+            "abstract—", "abstract -", "abstract:", "**abstract**",
+            "keywords:", "keywords—", "keywords -", "**keywords**",
+            "index terms:", "index terms—", "index terms -", "**index terms**"
+        )):
             i += 1
             continue
 
@@ -170,8 +186,14 @@ def build_semantic_manuscript(
             heading_text = heading_text.strip().strip("*_")
             level = len(hashes)
 
+            # Skip the first level 1 heading since it is the document title
+            if level == 1 and not seen_title_heading:
+                seen_title_heading = True
+                i += 1
+                continue
+
             # Skip abstract as a standard section body
-            if heading_text.lower() == "abstract":
+            if heading_text.lower() in {"abstract", "keywords", "index terms"}:
                 in_abstract = True
                 i += 1
                 continue
@@ -182,15 +204,32 @@ def build_semantic_manuscript(
             if heading_text.lower() in {"references", "works cited", "bibliography"}:
                 break
 
-            current_sec = Section(
-                id=f"sec-{sec_idx}",
-                number=str(sec_idx),
-                title=heading_text,
-                level=max(1, level - 1) if level > 1 else 1,
-                blocks=[],
-            )
-            sections.append(current_sec)
-            sec_idx += 1
+            # Major section: level == 2 in markdown (or level == 1 after paper title)
+            if level <= 2:
+                sec_num = str(major_sec_idx)
+                current_sec = Section(
+                    id=f"sec-{major_sec_idx}",
+                    number=sec_num,
+                    title=heading_text,
+                    level=1,
+                    blocks=[],
+                )
+                sections.append(current_sec)
+                major_sec_idx += 1
+                subsec_idx = 1
+            else:
+                # Subsection: level == 3 (or deeper)
+                parent_num = major_sec_idx - 1 if major_sec_idx > 1 else 1
+                current_sec = Section(
+                    id=f"subsec-{parent_num}-{subsec_idx}",
+                    number=f"{parent_num}.{subsec_idx}",
+                    title=heading_text,
+                    level=2,
+                    blocks=[],
+                )
+                sections.append(current_sec)
+                subsec_idx += 1
+
             i += 1
             continue
 
@@ -200,15 +239,17 @@ def build_semantic_manuscript(
 
         # Make sure we have a section to hold content
         if not current_sec:
+            sec_num = str(major_sec_idx)
             current_sec = Section(
-                id=f"sec-{sec_idx}",
-                number=str(sec_idx),
+                id=f"sec-{major_sec_idx}",
+                number=sec_num,
                 title="Introduction",
                 level=1,
                 blocks=[],
             )
             sections.append(current_sec)
-            sec_idx += 1
+            major_sec_idx += 1
+            subsec_idx = 1
 
         # Check display math $$...$$
         if stripped.startswith("$$"):
@@ -266,10 +307,11 @@ def build_semantic_manuscript(
         # Regular paragraph
         para_lines = [stripped]
         i += 1
-        while i < len(lines) and lines[i].strip() and not lines[i].strip().startswith(("#", "$$", "|", "- ", "* ", ">")):
+        while i < len(lines) and lines[i].strip() and not lines[i].strip().startswith(("#", "$$", "|", "- ", "* ", ">", "---", "***")):
             para_lines.append(lines[i].strip())
             i += 1
         current_sec.blocks.append(SemanticBlock(type="paragraph", content=" ".join(para_lines)))
+
 
     # Inject figures if generated in resource_dir
     figures: list[FigureBlock] = []
@@ -339,21 +381,45 @@ def build_semantic_manuscript(
 
     # 2. If no bibliography provided, extract from markdown references tail
     if not ref_sources:
-        ref_matches = re.findall(r"\[(\d+)\]\s+([^.\n]+?)\.\s*\"([^\"]+?)\"\s*([^,\n]*),?\s*(\d{4})?", text)
-        for idx, (num, auths, ref_title, venue, yr) in enumerate(ref_matches, 1):
-            clean_key = f"ref_{num}"
-            seen_keys.add(clean_key)
-            ref_sources.append(
-                CitationSource(
-                    id=f"cite_{num}",
-                    citation_key=clean_key,
-                    title=ref_title.strip(),
-                    authors=[a.strip() for a in auths.split(",") if a.strip()] or [auths.strip()],
-                    year=yr or "2024",
-                    venue=venue.strip() or "Academic Conference Proceedings",
-                    verified=True,
-                )
-            )
+        ref_sec_match = re.search(r"(?i)##\s*(?:references|bibliography|works cited)\s*\n+(.*)", text, flags=re.DOTALL)
+        if ref_sec_match:
+            ref_body = ref_sec_match.group(1)
+            for line in ref_body.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                m_ref = re.match(r"^[-*]?\s*\[?(\d+)\]?[\.\s]+(.*)$", line)
+                if m_ref:
+                    num = m_ref.group(1)
+                    raw_content = m_ref.group(2).strip()
+                    yr_m = re.search(r"\b(19\d\d|20\d\d)\b", raw_content)
+                    yr = yr_m.group(1) if yr_m else "2024"
+                    title_m = re.search(r'["“]([^"”]+)["”]', raw_content)
+                    if title_m:
+                        ref_title = title_m.group(1).strip()
+                        auth_part = raw_content[:title_m.start()].strip().rstrip("., ")
+                        venue_part = raw_content[title_m.end():].strip().strip("., ")
+                    else:
+                        parts = [p.strip() for p in raw_content.split(",") if p.strip()]
+                        ref_title = parts[1] if len(parts) > 1 else parts[0]
+                        auth_part = parts[0] if len(parts) > 1 else "Academic Author"
+                        venue_part = parts[2] if len(parts) > 2 else "Academic Conference Proceedings"
+                    
+                    auths = [a.strip() for a in auth_part.split(",") if a.strip()] or [auth_part]
+                    clean_key = f"ref_{num}"
+                    seen_keys.add(clean_key)
+                    ref_sources.append(
+                        CitationSource(
+                            id=f"cite_{num}",
+                            citation_key=clean_key,
+                            title=ref_title,
+                            authors=auths,
+                            year=yr,
+                            venue=venue_part or "Academic Conference Proceedings",
+                            verified=True,
+                        )
+                    )
+
 
     # Fallback reference if empty to avoid broken bibliography compile
     if not ref_sources:

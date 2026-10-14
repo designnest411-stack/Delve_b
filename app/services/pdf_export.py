@@ -915,6 +915,7 @@ def generate_research_pdf(
     Uses high-performance Typst compiler with fallback to ReportLab Platypus.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    resource_dir.mkdir(parents=True, exist_ok=True)
     manuscript = str(final_markdown or "").strip() or str(analysis_markdown or "").strip()
 
     # 1. Primary: Compile via Typst publication engine with CSL bibliographies & multi-column grid
